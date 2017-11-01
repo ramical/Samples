@@ -9,5 +9,5 @@ function FindProxyForURL( url, host)
 	if (shExpMatch(host,"enterpriseregistration.windows.net") ||      
 	   shExpMatch(host,"login.microsoftonline.com"))
 	   
-		 return "PROXY 10.255.237.20:8887;" + "PROXY 10.255.237.21:8887";
+		 return "PROXY <<ipaddress>>:<<port>>;" + "PROXY <<ipaddress>>:<<port>>";
 }
