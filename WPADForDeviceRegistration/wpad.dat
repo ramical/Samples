@@ -1,0 +1,13 @@
+// THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF
+// ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+// THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A
+// PARTICULAR PURPOSE.
+// Copyright (c) Microsoft Corporation. All rights reserved.
+
+function FindProxyForURL( url, host)
+{
+	if (shExpMatch(host,"enterpriseregistration.windows.net") ||      
+	   shExpMatch(host,"login.microsoftonline.com"))
+	   
+		 return "PROXY 10.255.237.20:8887;" + "PROXY 10.255.237.21:8887";
+}
