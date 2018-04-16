@@ -40,6 +40,23 @@ using Microsoft.IdentityModel.Clients.ActiveDirectory;
 
 public static class AdalHelper
 {
+
+    public static AuthenticationResult ObtainAadAuthenticationResultByPromptingUserCredential(string aadTokenIssuerUri, string resource, string clientId, string redirectUri)
+    {
+        AuthenticationContext authenticationContext = new AuthenticationContext(aadTokenIssuerUri);
+        AuthenticationResult authenticationResult = authenticationContext.AcquireToken
+        (
+            resource: resource,
+            clientId: clientId, 
+            redirectUri: new Uri(redirectUri),
+            promptBehavior: PromptBehavior.Always,
+            userId: UserIdentifier.AnyUser,
+            extraQueryParameters: "nux=1"
+        );
+
+        return authenticationResult;
+    }
+
     public static string ObtainAadAccessTokenByPromptingUserCredential(string aadTokenIssuerUri, string resource, string clientId, string redirectUri)
     {
         AuthenticationContext authenticationContext = new AuthenticationContext(aadTokenIssuerUri);
@@ -188,6 +205,51 @@ Function Get-AzureADAccessTokenFromUser
         $AadToken = [AdalHelper]::ObtainAadAccessTokenByPromptingUserCredential("https://login.windows.net/$TenantDomain/", $Resource, $ClientId, $RedirectUri);
         Write-Output $AadToken
     }
+}
+
+
+<# 
+ .Synopsis
+  Gets an access token based on a user credential using web authentication to access the Azure AD Graph API.
+
+ .Description
+  This function returns a string with the access token from a user. This will pop up a web authentication prompt for a user
+
+ .Parameter TenantDomain
+  The domain name of the tenant you want the token for.
+
+ .Parameter ClientId
+  The client ID of the application you want the token for
+  
+ .Parameter Redirect URI
+  Redirect URI for the OAuth request
+  
+
+ .Example
+   $accessToken = Get-AzureADGraphAPIAccessTokenFromUser -TenantDomain "contoso.com"
+#>
+Function Get-AzureADIdTokenFromUser
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [string]
+        $TenantDomain,
+        [Parameter(Mandatory=$true)]
+        [string]
+        $ClientId,
+        [Parameter(Mandatory=$true, ParameterSetName="PromptUserCredential")]
+        [string]
+        $RedirectUri,
+        [Parameter(Mandatory=$true)]
+        [string]
+        $Resource
+
+    )
+    
+    $AuthResult = [AdalHelper]::ObtainAadAuthenticationResultByPromptingUserCredential("https://login.windows.net/$TenantDomain/", $Resource, $ClientId, $RedirectUri);
+    Write-Output $AuthResult
 }
 
 <# 
@@ -689,7 +751,6 @@ Function Get-AzureADSignInReportByApp
   New-AzureADApplicationCertificateCredential -ApplicationObjectId $ReportingClientId -Certificate $Cert
   
 #>
-
 Function New-AzureADApplicationCertificateCredential
 {
   param
@@ -867,6 +928,111 @@ Function Remove-AzureADOnPremUsers
     }
 }
 
+<# 
+ .Synopsis
+  Adds a custom signing certificate to a service principal
+
+ .Description
+  This functions takes an X509Certificate, serializes it and associates it to a service principal.
+  It will return the Raw HTTP output of the Azure AD Graph Call. A successful call to this cmdlet should result in an 204 Output code 
+
+ .Parameter AccessToken
+  Access token to Azure AD Graph (See functions AzureADGraphAPIAccessToken* in this module)
+  
+ .Parameter ServicePrincipalObjectId
+  Object ID of the service principal to be updated.
+
+ .Parameter Certificate
+  Certificate object to be uploaded. This certificate must have the private key accessible.
+  
+ .Example
+  $AccessToken =  Get-AzureADGraphAPIAccessTokenFromUser -TenantDomain contoso.com -ClientId dbf240f7-84cb-471c-978a-a97890bd2393  -RedirectUri urn:your:returnurl
+  $ServicePrincipalObjectId = c1bc4a39-3be3-456d-a7f1-5a0d1b8531c2
+  $Cert = dir Cert:\LocalMachine\my\0EA8A7037A584C3C7BB54119D754DE1024AA1234
+  New-AzureADServicePrincipalSigningCertificate -AccessToken $AccessToken -ServicePrincipalObjectId $ServicePrincipalObjectId -Certificate $Cert
+
+  ----------------
+  Sample Output
+  ----------------
+
+  HTTP/1.1 204 No Content
+  Pragma: no-cache
+...
+  X-AspNet-Version: 4.0.30319
+  X-Powered-By: ASP.NET,ASP.NET
+#>
+Function New-AzureADServicePrincipalSigningCertificate
+{
+    param
+    (
+            [Parameter(Mandatory=$true)]
+            [string]
+            $AccessToken,
+            [Parameter(Mandatory=$true)]
+            [string]
+            $ServicePrincipalObjectId,
+            [Parameter(Mandatory=$true)]
+            [System.Security.Cryptography.X509Certificates.X509Certificate2]
+            $Certificate
+    )
+    #Create the Pfx File Placeholder
+    $TempPfxFileInfo = New-TemporaryFile
+    $TempPfxFilePath = $TempPfxFileInfo.FullName
+
+    try 
+    {
+        if (-not $Cert.HasPrivateKey)
+        {
+            Write-Error "Certificate supplied does not have the private key."
+        }
+
+        #Generate a temporary 128 symmetric key as the password of the exported PFX file
+        $pfxKeyBytes = new-object "System.Byte[]" 128 
+        $rnd = new-object System.Security.Cryptography.RNGCryptoServiceProvider
+        $rnd.GetBytes($pfxKeyBytes)
+        $PfxPassword = [Convert]::ToBase64String($pfxKeyBytes)
+        $PfxPasswordSecureString = ConvertTo-SecureString -String $PfxPassword -Force -AsPlainText
+        $Certificate | Export-PfxCertificate -FilePath $TempPfxFilePath -Password $PfxPasswordSecureString | Out-Null
+
+        #Get the parameters needed in the Azure AD Graph API call
+        $StartDate = ([DateTime]$Cert.NotBefore ).ToUniversalTime().ToString("s")+"Z"
+        $EndDate = ([DateTime]$Cert.NotAfter).ToUniversalTime().ToString("s")+"Z"
+        $KeyId = [Guid]::NewGuid().Guid.ToString();
+        $RawCertBytes = Get-Content -Path $TempPfxFilePath -Encoding Byte
+        $RawCertBase64String = [Convert]::ToBase64String($RawCertBytes)
+
+        $PatchBodyTemplate = '{5}
+            "keyCredentials":
+            [{5}
+                "startDate":"{0}",
+                "endDate":"{1}", 
+                "type":"X509CertAndPassword", 
+                "usage":"Sign", 
+                "keyId" : "{2}",
+                "value": "{3}"
+            {6}],
+            "passwordCredentials": 
+            [{5}
+                    "startDate":"{0}",
+                    "endDate":"{1}", 
+                    "keyId" : "{2}",
+                    "value": "{4}"
+            {6}]
+        {6}' 
+
+        $PatchBody = $PatchBodyTemplate -f $StartDate,$EndDate,$KeyId,$RawCertBase64String,$PfxPassword,"{","}"
+        $GraphEndpoint = "https://graph.windows.net/myorganization/servicePrincipals/{0}?api-version=1.6" -f $ServicePrincipalObjectId
+        $headers  = @{'Authorization'="Bearer $AccessToken"}
+
+        #Invoke Graph API. Result should be 204
+        Invoke-WebRequest -Method Patch -Uri $GraphEndpoint -Body $PatchBody -Headers $headers -ContentType "application/json" -UseBasicParsing | Select-Object -ExpandProperty RawContent
+    }
+    finally
+    {
+        #Delete the PFX file
+        Remove-Item -LiteralPath $TempPfxFilePath
+    }
+}
 
 <# 
  .Synopsis
@@ -945,6 +1111,7 @@ function Install-MSCloudIdUtilsModule
 
 Export-ModuleMember Install-MSCloudIdUtilsModule
 Export-ModuleMember New-AzureADApplicationCertificateCredential
+Export-ModuleMember New-AzureADServicePrincipalSigningCertificate
 Export-ModuleMember Get-AzureADGraphAPIAccessTokenFromAppKey
 Export-ModuleMember Get-AzureADGraphAPIAccessTokenFromUser
 Export-ModuleMember Get-AzureADGraphAPIAccessTokenFromCert
@@ -957,3 +1124,4 @@ Export-ModuleMember Get-AzureADAccessTokenFromUser
 Export-ModuleMember Get-AzureADAccessTokenOnBehalfOfUser
 Export-ModuleMember Get-AzureADAppStaleLicensingReportByUser
 Export-ModuleMember Get-AzureADUserLastSigninDateTime
+Export-ModuleMember Get-AzureADIdTokenFromUser
