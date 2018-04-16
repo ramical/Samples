@@ -146,9 +146,7 @@
       <HintPath>..\packages\Antlr.3.4.1.9004\lib\Antlr3.Runtime.dll</HintPath>
     </Reference>
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Properties\" />
-  </ItemGroup>
+  <ItemGroup />
   <ItemGroup>
     <Compile Include="App_Start\Startup.Auth.cs" />
     <Compile Include="App_Start\WebApiConfig.cs" />
@@ -161,7 +159,6 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="App\Content\app.css" />
-    <Content Include="App\Scripts\adal.js" />
     <Content Include="App\Scripts\app.js" />
     <Content Include="App\Scripts\Ctrls\homeCtrl.js" />
     <Content Include="App\Scripts\Ctrls\userDataCtrl.js" />
@@ -180,7 +177,10 @@
       <SubType>Designer</SubType>
     </Content>
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <None Include="Properties\PublishProfiles\CAExtAppService - Web Deploy.pubxml" />
+    <None Include="Properties\PublishProfiles\JWT2SAML - Web Deploy.pubxml" />
+  </ItemGroup>
   <ItemGroup>
     <Content Include="packages.config" />
   </ItemGroup>
