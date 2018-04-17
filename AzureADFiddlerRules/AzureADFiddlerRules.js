@@ -2,7 +2,7 @@
 //Alternatively, you can use CTRL+R
 
 
-//Step 2: Insert this fragment at the beginning of the roles.js
+//Step 2: Insert this fragment at the beginning of rules.js
 public static RulesOption("&Highlight Azure AD Traffic", "Azure A&D")
 var m_HighlightAAD: boolean = false;
 	
