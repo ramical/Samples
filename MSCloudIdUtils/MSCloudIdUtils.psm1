@@ -935,7 +935,7 @@ Function Remove-MSCloudIdSyncUsers
   It will return the Raw HTTP output of the Azure AD Graph Call. A successful call to this cmdlet should result in an 204 Output code 
 
  .Parameter AccessToken
-  Access token to Azure AD Graph (See functions AzureADGraphAccessToken* in this module)
+  Access token to Azure AD Graph (See functions *GraphAccessToken* in this module)
   
  .Parameter ServicePrincipalObjectId
   Object ID of the service principal to be updated.
