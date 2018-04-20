@@ -171,9 +171,9 @@ Initialize-ActiveDirectoryAuthenticationLibrary
   
 
  .Example
-   $accessToken = Get-AzureADGraphAPIAccessTokenFromUser -TenantDomain "contoso.com"
+   $accessToken = Get-MSCloudIdAzureADGraphAccessTokenFromUser -TenantDomain "contoso.com"
 #>
-Function Get-AzureADAccessTokenFromUser
+Function Get-MSCloudIdAccessTokenFromUser
 {
     [CmdletBinding()]
     param
@@ -226,9 +226,9 @@ Function Get-AzureADAccessTokenFromUser
   
 
  .Example
-   $accessToken = Get-AzureADGraphAPIAccessTokenFromUser -TenantDomain "contoso.com"
+   $accessToken = Get-MSCloudIdAzureADGraphAccessTokenFromUser -TenantDomain "contoso.com"
 #>
-Function Get-AzureADIdTokenFromUser
+Function Get-MSCloudIdIdTokenFromUser
 {
     [CmdletBinding()]
     param
@@ -267,9 +267,9 @@ Function Get-AzureADIdTokenFromUser
 
 
  .Example
-   $accessToken = Get-AzureADGraphAPIAccessTokenFromAppKey -TenantDomain "contoso.com" -ClientCredential (Get-Credential)
+   $accessToken = Get-MSCloudIdGraphAPIAccessTokenFromAppKey -TenantDomain "contoso.com" -ClientCredential (Get-Credential)
 #>
-Function Get-AzureADGraphAPIAccessTokenFromAppKey
+Function Get-MSCloudIdGraphAPIAccessTokenFromAppKey
 {
     [CmdletBinding()]
     param
@@ -307,7 +307,6 @@ Function Get-AzureADGraphAPIAccessTokenFromAppKey
     }
 
     Write-Output $oauth.access_token
-
 }
 
 <# 
@@ -328,9 +327,9 @@ Function Get-AzureADGraphAPIAccessTokenFromAppKey
 
 
  .Example
-   $accessToken = Get-AzureADGraphAPIAccessTokenFromUser -TenantDomain "contoso.com" -Resource "myapp"
+   $accessToken = Get-MSCloudIdAzureADGraphAccessTokenFromUser -TenantDomain "contoso.com" -Resource "myapp"
 #>
-Function Get-AzureADGraphAPIAccessTokenFromUser
+Function Get-MSCloudIdAzureADGraphAccessTokenFromUser
 {
     [CmdletBinding()]
     param
@@ -382,9 +381,9 @@ Function Get-AzureADGraphAPIAccessTokenFromUser
   
 
  .Example
-   $accessToken = Get-AzureADGraphAPIAccessTokenFromUser -TenantDomain "contoso.com" -Resource "myapp"
+   $accessToken = Get-MSCloudIdAzureADGraphAccessTokenFromUser -TenantDomain "contoso.com" -Resource "myapp"
 #>
-Function Get-AzureADAccessTokenOnBehalfOfUser
+Function Get-MSCloudIdAccessTokenOnBehalfOfUser
 {
     [CmdletBinding()]
     param
@@ -402,7 +401,6 @@ Function Get-AzureADAccessTokenOnBehalfOfUser
         [string]
         $Resource
     )
-    $ClientNetworkCredential = $ClientCredential.GetNetworkCredential()
     $AadToken = [AdalHelper]::ObtainAadAccessTokenOnbehalfOfUser("https://login.windows.net/$TenantDomain/", $ClientCredential, $Resource, $UserToken );
     Write-Output $AadToken
 }
@@ -427,9 +425,9 @@ Function Get-AzureADAccessTokenOnBehalfOfUser
 
   $ReportingClientId = "9a0112fb-6626-4761-a96b-a5f433c69ef7"
   $Cert = dir Cert:\LocalMachine\my\0EA8A7037A584C3C7BB54119D754DE1024AABAB2
-  $AccessToken = Get-AzureADGraphAPIAccessTokenFromCert  -TenantDomain "contoso.com" -ClientId $ReportingClientId -Certificate $Cert
+  $AccessToken = Get-MSCloudIdAzureADGraphAccessTokenFromCert  -TenantDomain "contoso.com" -ClientId $ReportingClientId -Certificate $Cert
 #>
-Function Get-AzureADGraphAPIAccessTokenFromCert
+Function Get-MSCloudIdAzureADGraphAccessTokenFromCert
 {
     [CmdletBinding()]
     param
@@ -468,10 +466,10 @@ Function Get-AzureADGraphAPIAccessTokenFromCert
 
   $ReportingClientId = "9a0112fb-6626-4761-a96b-a5f433c69ef7"
   $Cert = dir Cert:\LocalMachine\my\0EA8A7037A584C3C7BB54119D754DE1024AABAB2
-  $AccessToken = Get-AzureADGraphAPIAccessTokenFromCert  -TenantDomain "contoso.com" -ClientId $ReportingClientId -Certificate $Cert
-  $SignInLog = Invoke-AzureADGraphAPIQuery -AccessToken $AccessToken -TenantDomain $TenantDomain -GraphQuery "/activities/signinEvents?api-version=beta" 
+  $AccessToken = Get-MSCloudIdAzureADGraphAccessTokenFromCert  -TenantDomain "contoso.com" -ClientId $ReportingClientId -Certificate $Cert
+  $SignInLog = Invoke-MSCloudIdAzureADGraphQuery -AccessToken $AccessToken -TenantDomain $TenantDomain -GraphQuery "/activities/signinEvents?api-version=beta" 
 #>
-Function Invoke-AzureADGraphAPIQuery
+Function Invoke-MSCloudIdAzureADGraphQuery
 {
     [CmdletBinding()]
     param
@@ -553,10 +551,10 @@ Function Invoke-AzureADGraphAPIQuery
  .Example
   $ReportingClientId = "9a0112fb-6626-4761-a96b-a5f433c69ef7"
   $Cert = dir Cert:\LocalMachine\my\0EA8A7037A584C3C7BB54119D754DE1024AABAB2
-  $AccessToken = Get-AzureADGraphAPIAccessTokenFromCert  -TenantDomain "contoso.com" -ClientId $ReportingClientId -Certificate $Cert
+  $AccessToken = Get-MSCloudIdAzureADGraphAccessTokenFromCert  -TenantDomain "contoso.com" -ClientId $ReportingClientId -Certificate $Cert
   $SignInLog = Invoke-AzureADAppAssignmentReport -AccessToken $AccessToken -TenantDomain $TenantDomain 
 #>
-Function Get-AzureADAppAssignmentReport
+Function Get-MSCloudIdAppAssignmentReport
 {    
     [CmdletBinding()]
     param
@@ -572,7 +570,7 @@ Function Get-AzureADAppAssignmentReport
     Write-Progress -Id 10 -Activity "Building app assignment report" -CurrentOperation "Getting list of applications" 
 
 
-    $apps = Invoke-AzureADGraphAPIQuery -AccessToken $AccessToken -TenantDomain $TenantDomain -GraphQuery "servicePrincipals?api-version=1.5"
+    $apps = Invoke-MSCloudIdAzureADGraphQuery -AccessToken $AccessToken -TenantDomain $TenantDomain -GraphQuery "servicePrincipals?api-version=1.5"
 
     $results = @()
     $appCount = $apps.Count
@@ -583,7 +581,7 @@ Function Get-AzureADAppAssignmentReport
         Write-Progress -Id 10 -Activity "Building app assignment report" -PercentComplete (100 * $appIndex / $appCount)  -CurrentOperation "Extracting permissions for each application ($appIndex/$appCount)"  
 
         $appObjectId = $app.objectId
-        $appRoles = Invoke-AzureADGraphAPIQuery -AccessToken $AccessToken -TenantDomain $TenantDomain -GraphQuery "servicePrincipals/$appObjectId/appRoleAssignedTo?api-version=1.5"
+        $appRoles = Invoke-MSCloudIdAzureADGraphQuery -AccessToken $AccessToken -TenantDomain $TenantDomain -GraphQuery "servicePrincipals/$appObjectId/appRoleAssignedTo?api-version=1.5"
         foreach($appPermission in $appRoles)
         {
             $result = New-Object -TypeName PSObject
@@ -613,7 +611,7 @@ Function Get-AzureADTenantSkus
     Write-Output $script:TenantSkus
 }
 
-Function Get-AzureADUserLastSigninDateTime 
+Function Get-MSCloudIdUserLastSigninDateTime 
 {
 
     [CmdletBinding()]
@@ -637,7 +635,7 @@ Function Get-AzureADUserLastSigninDateTime
     $CutOffDateFilter = "{0:s}Z" -f (Get-Date).AddDays(-1 * $CutOffDays)
    
     #Step 1: Get sign in info from the user
-    $signInActivity = Invoke-AzureADGraphAPIQuery -TenantDomain $TenantDomain -AccessToken $AccessToken -GraphQuery "/activities/signinEvents?api-version=beta&`$filter=signinDateTime ge $CutOffDateFilter and userPrincipalName eq '$UserPrincipalName'"
+    $signInActivity = Invoke-MSCloudIdAzureADGraphQuery -TenantDomain $TenantDomain -AccessToken $AccessToken -GraphQuery "/activities/signinEvents?api-version=beta&`$filter=signinDateTime ge $CutOffDateFilter and userPrincipalName eq '$UserPrincipalName'"
 
     #If we had at least one result, then get-member will retrieve the property metadata
     $atLeastOneSignIn = $signInActivity | Get-Member userId
@@ -654,7 +652,7 @@ Function Get-AzureADUserLastSigninDateTime
 
 }
 
-Function Get-AzureADAppStaleLicensingReportByUser
+Function Get-MSCloudIdAppStaleLicensingReportByUser
 {
     [CmdletBinding()]
     param
@@ -673,7 +671,7 @@ Function Get-AzureADAppStaleLicensingReportByUser
         $UserPrincipalName
 
     )
-    $LastSignIn = Get-AzureADUserLastSigninDateTime -TenantDomain $TenantDomain -AccessToken $AccessToken -CutOffDays $CutOffDays -UserPrincipalName $UserPrincipalName
+    $LastSignIn = Get-MSCloudIdUserLastSigninDateTime -TenantDomain $TenantDomain -AccessToken $AccessToken -CutOffDays $CutOffDays -UserPrincipalName $UserPrincipalName
     $TenantSKUs = Get-AzureADTenantSkus
     $user= Get-AzureADUser -SearchString $UserPrincipalName
     $userSkus = $user.AssignedLicenses
@@ -726,7 +724,7 @@ Function Get-AzureADSignInReportByApp
     $CutOffDateFilter = "{0:s}Z" -f (Get-Date).AddDays(-1 * $CutOffDays)
    
     #Step 1: Get all sign ins from all folks
-    $signInActivity = Invoke-AzureADGraphAPIQuery -TenantDomain $TenantDomain -AccessToken $AccessToken -GraphQuery "/activities/signinEvents?api-version=beta&`$filter=signinDateTime ge $CutOffDateFilter"
+    $signInActivity = Invoke-MSCloudIdAzureADGraphQuery -TenantDomain $TenantDomain -AccessToken $AccessToken -GraphQuery "/activities/signinEvents?api-version=beta&`$filter=signinDateTime ge $CutOffDateFilter"
 
     $signInActivity | Group-Object  -NoElement 
 
@@ -748,10 +746,10 @@ Function Get-AzureADSignInReportByApp
   $ReportingClientId = "9a0112fb-6626-4761-a96b-a5f433c69ef7"
   $Cert = dir Cert:\LocalMachine\my\0EA8A7037A584C3C7BB54119D754DE1024AABAB2
 
-  New-AzureADApplicationCertificateCredential -ApplicationObjectId $ReportingClientId -Certificate $Cert
+  New-MSCloudIdApplicationCertificateCredential -ApplicationObjectId $ReportingClientId -Certificate $Cert
   
 #>
-Function New-AzureADApplicationCertificateCredential
+Function New-MSCloudIdApplicationCertificateCredential
 {
   param
   (
@@ -787,10 +785,10 @@ Function New-AzureADApplicationCertificateCredential
   
  .Example
   Connect-AzureAD
-  Get-AzureADApplicationKeyExpirationReport
+  Get-MSCloudIdApplicationKeyExpirationReport
   
 #>
-Function Get-AzureADApplicationKeyExpirationReport
+Function Get-MSCloudIdApplicationKeyExpirationReport
 {
     param()
     
@@ -881,9 +879,9 @@ Function Get-AzureADApplicationKeyExpirationReport
 
  .Example
   Connect-MSOLService
-  Remove-AzureADOnPremUsers -Force
+  Remove-MSCloudIdSyncUsers -Force
 #>
-Function Remove-AzureADOnPremUsers
+Function Remove-MSCloudIdSyncUsers
 {
     [CmdletBinding()]
     param
@@ -937,7 +935,7 @@ Function Remove-AzureADOnPremUsers
   It will return the Raw HTTP output of the Azure AD Graph Call. A successful call to this cmdlet should result in an 204 Output code 
 
  .Parameter AccessToken
-  Access token to Azure AD Graph (See functions AzureADGraphAPIAccessToken* in this module)
+  Access token to Azure AD Graph (See functions AzureADGraphAccessToken* in this module)
   
  .Parameter ServicePrincipalObjectId
   Object ID of the service principal to be updated.
@@ -946,10 +944,10 @@ Function Remove-AzureADOnPremUsers
   Certificate object to be uploaded. This certificate must have the private key accessible.
   
  .Example
-  $AccessToken =  Get-AzureADGraphAPIAccessTokenFromUser -TenantDomain contoso.com -ClientId dbf240f7-84cb-471c-978a-a97890bd2393  -RedirectUri urn:your:returnurl
+  $AccessToken =  Get-MSCloudIdAzureADGraphAccessTokenFromUser -TenantDomain contoso.com -ClientId dbf240f7-84cb-471c-978a-a97890bd2393  -RedirectUri urn:your:returnurl
   $ServicePrincipalObjectId = c1bc4a39-3be3-456d-a7f1-5a0d1b8531c2
   $Cert = dir Cert:\LocalMachine\my\0EA8A7037A584C3C7BB54119D754DE1024AA1234
-  New-AzureADServicePrincipalSigningCertificate -AccessToken $AccessToken -ServicePrincipalObjectId $ServicePrincipalObjectId -Certificate $Cert
+  New-MSCloudIdServicePrincipalSigningCertificate -AccessToken $AccessToken -ServicePrincipalObjectId $ServicePrincipalObjectId -Certificate $Cert
 
   ----------------
   Sample Output
@@ -961,7 +959,7 @@ Function Remove-AzureADOnPremUsers
   X-AspNet-Version: 4.0.30319
   X-Powered-By: ASP.NET,ASP.NET
 #>
-Function New-AzureADServicePrincipalSigningCertificate
+Function New-MSCloudIdServicePrincipalSigningCertificate
 {
     param
     (
@@ -1033,6 +1031,7 @@ Function New-AzureADServicePrincipalSigningCertificate
         Remove-Item -LiteralPath $TempPfxFilePath
     }
 }
+
 
 <# 
  .Synopsis
@@ -1108,20 +1107,19 @@ function Install-MSCloudIdUtilsModule
 
 }
 
-
 Export-ModuleMember Install-MSCloudIdUtilsModule
-Export-ModuleMember New-AzureADApplicationCertificateCredential
-Export-ModuleMember New-AzureADServicePrincipalSigningCertificate
-Export-ModuleMember Get-AzureADGraphAPIAccessTokenFromAppKey
-Export-ModuleMember Get-AzureADGraphAPIAccessTokenFromUser
-Export-ModuleMember Get-AzureADGraphAPIAccessTokenFromCert
-Export-ModuleMember Invoke-AzureADGraphAPIQuery
-Export-ModuleMember Get-AzureADAppAssignmentReport
-Export-ModuleMember Remove-AzureADOnPremUsers
-Export-ModuleMember Get-AzureADApplicationKeyExpirationReport
-Export-ModuleMember Get-AzureADAppStaleLicensingReport
-Export-ModuleMember Get-AzureADAccessTokenFromUser
-Export-ModuleMember Get-AzureADAccessTokenOnBehalfOfUser
-Export-ModuleMember Get-AzureADAppStaleLicensingReportByUser
-Export-ModuleMember Get-AzureADUserLastSigninDateTime
-Export-ModuleMember Get-AzureADIdTokenFromUser
+Export-ModuleMember New-MSCloudIdApplicationCertificateCredential
+Export-ModuleMember New-MSCloudIdServicePrincipalSigningCertificate
+Export-ModuleMember Get-MSCloudIdGraphAPIAccessTokenFromAppKey
+Export-ModuleMember Get-MSCloudIdAzureADGraphAccessTokenFromUser
+Export-ModuleMember Get-MSCloudIdAzureADGraphAccessTokenFromCert
+Export-ModuleMember Invoke-MSCloudIdAzureADGraphQuery
+Export-ModuleMember Get-MSCloudIdAppAssignmentReport
+Export-ModuleMember Remove-MSCloudIdSyncUsers
+Export-ModuleMember Get-MSCloudIdApplicationKeyExpirationReport
+Export-ModuleMember Get-MSCloudIdAppStaleLicensingReport
+Export-ModuleMember Get-MSCloudIdAccessTokenFromUser
+Export-ModuleMember Get-MSCloudIdAccessTokenOnBehalfOfUser
+Export-ModuleMember Get-MSCloudIdAppStaleLicensingReportByUser
+Export-ModuleMember Get-MSCloudIdUserLastSigninDateTime
+Export-ModuleMember Get-MSCloudIdIdTokenFromUser
