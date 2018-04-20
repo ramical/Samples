@@ -2,7 +2,11 @@
 //Alternatively, you can use CTRL+R
 
 
-//Step 2: Insert this fragment at the beginning of rules.js
+//Step 2: Call the function at OnPeekAtResponseHeaders
+ApplyAzureADRules(oSession);
+
+
+//Step 3: Copy this static function inside the Handlers class
 public static RulesOption("&Highlight Azure AD Traffic", "Azure A&D")
 var m_HighlightAAD: boolean = false;
 	
@@ -10,7 +14,7 @@ public static RulesOption("&Show only Azure AD Traffic", "Azure A&D")
 var m_FilterAAD: boolean = false;
 
 
-//Step 3: Copy this static function inside the Handlers class
+//Step 4: Copy this static function inside the Handlers class
 static function ApplyAzureADRules(oSession : Session)
 {
 	if (m_HighlightAAD || m_FilterAAD )
@@ -84,5 +88,3 @@ static function ApplyAzureADRules(oSession : Session)
 	}
 }
 
-//Step 4: Call the function at OnPeekAtResponseHeaders
-ApplyAzureADRules(oSession);
