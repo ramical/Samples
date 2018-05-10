@@ -72,7 +72,7 @@ namespace JWT2SAML.Controllers
                         {"assertion",accessToken },// #access token is scoped to api manager service
                         {"client_id",ConfigurationManager.AppSettings["ida:Audience"] },// #api manager service
                         {"client_secret", ConfigurationManager.AppSettings["ida:ClientSecret"] },// #api manager client secret
-                        {"resource", ConfigurationManager.AppSettings["ida:BackEndAPIResource"] },// #Backend api -- SAML App
+                        {"resource", ConfigurationManager.AppSettings["ida:BackEndAPIResource"] },// #Backend api -- SAML App Entity ID
                         {"requested_token_use","on_behalf_of" },
                         {"requested_token_type", "urn:ietf:params:oauth:token-type:saml2" }
                     }
@@ -86,12 +86,15 @@ namespace JWT2SAML.Controllers
 
                 string encodedSamlToken = tokenResponse.AccessToken;
 
-                //Adjust format in the SAML token, for some reason comes with the JSON Base64
+                //Adjust format in the SAML token, which comes as JSON Base64
                 //Learn more: https://jb64.org/specification/
                 string adjustedFormat = encodedSamlToken.Replace("_", "/").Replace("-", "+");
                 adjustedFormat = adjustedFormat.PadRight(adjustedFormat.Length + (4 - adjustedFormat.Length % 4) % 4, '=');
                 string decodedSamlToken = Encoding.UTF8.GetString(Convert.FromBase64String(adjustedFormat));
                 
+                //NOTE: for this example, we are returning the SAML token for debugging/demo purposes.
+                //The actual scenario in production should be to have the frontend interacting with the backend 
+                //via Service-To-Service (S2S).
                 return new JWT2SAMLTransition
                 {
                     JWT = accessToken,

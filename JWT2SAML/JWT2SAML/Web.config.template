@@ -8,9 +8,14 @@
     <add key="ida:Tenant" value="yourtnantname.onmicrosoft.com" />
     <!--This is the application id of the frontend service-->
     <add key="ida:Audience" value="yourvaluehere" />
+    
     <!--This is the client secret of the front end service-->
     <add key="ida:ClientSecret" value="yourvaluehere"/>
-    <!--This is the identifier of the backend service, and the audience of the SAML token you will get back-->
+    
+    <!--
+        SAML Entity ID of the backend service. This will be the Audience of the SAML token that you
+        will get back from Azure AD token exchange request        
+    -->
     <add key="ida:BackEndAPIResource" value="yourvaluehere"/>
   </appSettings>
   <system.web>
