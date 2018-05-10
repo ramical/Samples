@@ -171,7 +171,7 @@ Initialize-ActiveDirectoryAuthenticationLibrary
   
 
  .Example
-   $accessToken = Get-MSCloudIdAzureADGraphAccessTokenFromUser -TenantDomain "contoso.com"
+   $accessToken = Get-MSCloudIdAccessTokenFromUser -TenantDomain "contoso.com"
 #>
 Function Get-MSCloudIdAccessTokenFromUser
 {
@@ -226,7 +226,7 @@ Function Get-MSCloudIdAccessTokenFromUser
   
 
  .Example
-   $accessToken = Get-MSCloudIdAzureADGraphAccessTokenFromUser -TenantDomain "contoso.com"
+   $accessToken = Get-MSCloudIdIdTokenFromUser -TenantDomain "contoso.com"
 #>
 Function Get-MSCloudIdIdTokenFromUser
 {
@@ -979,7 +979,7 @@ Function New-MSCloudIdServicePrincipalSigningCertificate
 
     try 
     {
-        if (-not $Cert.HasPrivateKey)
+        if (-not $Certificate.HasPrivateKey)
         {
             Write-Error "Certificate supplied does not have the private key."
         }
@@ -993,8 +993,8 @@ Function New-MSCloudIdServicePrincipalSigningCertificate
         $Certificate | Export-PfxCertificate -FilePath $TempPfxFilePath -Password $PfxPasswordSecureString | Out-Null
 
         #Get the parameters needed in the Azure AD Graph API call
-        $StartDate = ([DateTime]$Cert.NotBefore ).ToUniversalTime().ToString("s")+"Z"
-        $EndDate = ([DateTime]$Cert.NotAfter).ToUniversalTime().ToString("s")+"Z"
+        $StartDate = ([DateTime]$Certificate.NotBefore).ToUniversalTime().ToString("s")+"Z"
+        $EndDate = ([DateTime]$Certificate.NotAfter).ToUniversalTime().ToString("s")+"Z"
         $KeyId = [Guid]::NewGuid().Guid.ToString();
         $RawCertBytes = Get-Content -Path $TempPfxFilePath -Encoding Byte
         $RawCertBase64String = [Convert]::ToBase64String($RawCertBytes)
