@@ -593,7 +593,7 @@ Function Invoke-MSCloudIdAzureADGraphQuery
   $ReportingClientId = "9a0112fb-6626-4761-a96b-a5f433c69ef7"
   $Cert = dir Cert:\LocalMachine\my\0EA8A7037A584C3C7BB54119D754DE1024AABAB2
   $AccessToken = Get-MSCloudIdMSGraphAccessTokenFromCert  -TenantDomain "contoso.com" -ClientId $ReportingClientId -Certificate $Cert
-  $SignInLog = Invoke-MSCloudIdMSGraphQuery -AccessToken $AccessToken -TenantDomain $TenantDomain -GraphQuery "/activities/signinEvents?api-version=beta" 
+  $SignInLog = Invoke-MSCloudIdMSGraphQuery -AccessToken $AccessToken -GraphQuery "/beta/identityRiskEvents" 
 #>
 Function Invoke-MSCloudIdMSGraphQuery
 {
