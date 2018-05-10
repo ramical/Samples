@@ -448,6 +448,47 @@ Function Get-MSCloudIdAzureADGraphAccessTokenFromCert
 
 <# 
  .Synopsis
+  Gets an access token based on a certificate credential
+
+ .Description
+  This function returns a string with the access token from a certificate credential to access the Azure AD Graph API.  
+
+ .Parameter TenantDomain
+  The domain name of the tenant you want the token for.
+
+ .Parameter ClientID
+  The client ID of the application that has the certificate
+
+ .Parameter Certificate
+  The X509Certificate2 certificate. The private key of the certificate should be accessible to obtain the access token
+  
+ .Example
+
+  $ReportingClientId = "9a0112fb-6626-4761-a96b-a5f433c69ef7"
+  $Cert = dir Cert:\LocalMachine\my\0EA8A7037A584C3C7BB54119D754DE1024AABAB2
+  $AccessToken = Get-MSCloudIdMSGraphAccessTokenFromCert  -TenantDomain "contoso.com" -ClientId $ReportingClientId -Certificate $Cert
+#>
+Function Get-MSCloudIdMSGraphAccessTokenFromCert
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [string]
+        $TenantDomain,
+        [Parameter(Mandatory=$true)]
+        [string]
+        $ClientId,
+        [Parameter(Mandatory=$true)]
+        [System.Security.Cryptography.X509Certificates.X509Certificate2]
+        $Certificate
+    )
+    $AadToken = [AdalHelper]::ObtainAadAccessTokenWithCert("https://login.windows.net/$TenantDomain/", $Certificate, "https://graph.microsoft.com/", $ClientId);
+    Write-Output $AadToken
+}
+
+<# 
+ .Synopsis
   Performs a query against Azure AD Graph API.
 
  .Description
@@ -487,13 +528,94 @@ Function Invoke-MSCloudIdAzureADGraphQuery
         $TokenRenewalCallback
     )
 
-    Write-Progress -Id 1 -Activity "Querying directory" -CurrentOperation "Invoking Graph API"
+    Write-Progress -Id 1 -Activity "Querying directory" -CurrentOperation "Invoking Azure AD Graph API"
 
     $headerParams  = @{'Authorization'="Bearer $AccessToken"}
        
     $queryResults = @()
     $originalUrl = "https://graph.windows.net/$TenantDomain/$GraphQuery"
     $queryUrl = "https://graph.windows.net/$TenantDomain/$GraphQuery"
+    $queryCount = 0
+
+    while (-not [String]::IsNullOrEmpty($queryUrl))
+    {
+        $batchResult = (Invoke-WebRequest -Headers $headerParams -Uri $queryUrl).Content | ConvertFrom-Json
+        if ($batchResult.value -ne $null)
+        {
+            $queryResults += $batchResult.value
+        }
+        else
+        {
+            $queryResults += $batchResult
+        }
+        $queryCount = $queryResults.Count
+        Write-Progress -Id 1 -Activity "Querying directory" -CurrentOperation "Retrieving results ($queryCount found so far)" 
+        $queryUrl = ""
+
+        $odataNextLink = $batchResult | Select-Object -ExpandProperty "@odata.nextLink" -ErrorAction SilentlyContinue
+
+        if ($odataNextLink -ne $null)
+        {
+            $queryUrl =  $odataNextLink
+        }
+        else
+        {
+            $odataNextLink = $batchResult | Select-Object -ExpandProperty "odata.nextLink" -ErrorAction SilentlyContinue
+            if ($odataNextLink -ne $null)
+            {
+                $absoluteUri = [Uri]"https://bogus/$odataNextLink"
+                $skipToken = $absoluteUri.Query.TrimStart("?")
+                $queryUrl = "https://graph.windows.net/$TenantDomain/$odataNextLink&api-version=1.6" #"$originalUrl&$skipToken"
+            }
+        }
+    }
+
+    Write-Progress -Id 1 -Activity "Querying directory" -Completed
+
+    Write-Output $queryResults
+}
+
+<# 
+ .Synopsis
+  Performs a query against Microsoft Graph API.
+
+ .Description
+  This functions invokes the Microsoft Graph API and returns the results as objects in the pipeline. This function also traverses all pages of the query, if needed.
+
+  .Parameter AccessToken
+  Access token for Azure AD Graph API
+
+ .Parameter GraphQuery
+  The Query against Graph API
+  
+ .Example
+
+  $ReportingClientId = "9a0112fb-6626-4761-a96b-a5f433c69ef7"
+  $Cert = dir Cert:\LocalMachine\my\0EA8A7037A584C3C7BB54119D754DE1024AABAB2
+  $AccessToken = Get-MSCloudIdMSGraphAccessTokenFromCert  -TenantDomain "contoso.com" -ClientId $ReportingClientId -Certificate $Cert
+  $SignInLog = Invoke-MSCloudIdMSGraphQuery -AccessToken $AccessToken -TenantDomain $TenantDomain -GraphQuery "/activities/signinEvents?api-version=beta" 
+#>
+Function Invoke-MSCloudIdMSGraphQuery
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [string]
+        $AccessToken, # For example, contoso.onmicrosoft.com,        
+        [string]
+        $GraphQuery,
+        [ScriptBlock]
+        $TokenRenewalCallback
+    )
+
+    Write-Progress -Id 1 -Activity "Querying directory" -CurrentOperation "Invoking MS Graph API"
+
+    $headerParams  = @{'Authorization'="Bearer $AccessToken"}
+       
+    $queryResults = @()
+    $originalUrl = "https://graph.microsoft.com/$GraphQuery"
+    $queryUrl = "https://graph.microsoft.com/$GraphQuery"
     $queryCount = 0
 
     while (-not [String]::IsNullOrEmpty($queryUrl))
@@ -1032,6 +1154,71 @@ Function New-MSCloudIdServicePrincipalSigningCertificate
     }
 }
 
+function Convert-FromBase64StringWithNoPadding([string]$data)
+{
+    $data = $data.Replace('-', '+').Replace('_', '/')
+    switch ($data.Length % 4)
+    {
+        0 { break }
+        2 { $data += '==' }
+        3 { $data += '=' }
+        default { throw New-Object ArgumentException('data') }
+    }
+    return [System.Convert]::FromBase64String($data)
+}
+
+function Decode-JWT([string]$rawToken)
+{
+    $parts = $rawToken.Split('.');
+    $headers = [System.Text.Encoding]::UTF8.GetString((Convert-FromBase64StringWithNoPadding $parts[0]))
+    $claims = [System.Text.Encoding]::UTF8.GetString((Convert-FromBase64StringWithNoPadding $parts[1]))
+    $signature = (Convert-FromBase64StringWithNoPadding $parts[2])
+
+    $customObject = [PSCustomObject]@{
+        headers = ($headers | ConvertFrom-Json)
+        claims = ($claims | ConvertFrom-Json)
+        signature = $signature
+    }
+
+    Write-Verbose -Message ("JWT`r`n.headers: {0}`r`n.claims: {1}`r`n.signature: {2}`r`n" -f $headers,$claims,[System.BitConverter]::ToString($signature))
+    return $customObject
+}
+
+<# 
+ .Synopsis
+  Decodes a JSON Web Token (JWT)  
+
+ .Description
+  This cmdlet takes a JWT, decodes and emits it out in the output stream
+
+ .Example
+  ConvertFrom-MSCloudIDJWT
+
+#>
+function ConvertFrom-MSCloudIDJWT
+{
+    [CmdletBinding()]  
+    Param
+    (
+        # Param1 help description
+        [Parameter(Mandatory=$true)]
+        [string] $Token,
+        [switch] $Recurse
+    )
+    
+    if ($Recurse)
+    {
+        $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($Token))
+        $DecodedJwt = Decode-JWT -rawToken $decoded
+    }
+    else
+    {
+        $DecodedJwt = Decode-JWT -rawToken $Token
+    }
+     Write-Host ($DecodedJwt | Select headers,claims | ConvertTo-Json)
+    return $DecodedJwt
+}
+
 
 <# 
  .Synopsis
@@ -1114,6 +1301,8 @@ Export-ModuleMember Get-MSCloudIdGraphAPIAccessTokenFromAppKey
 Export-ModuleMember Get-MSCloudIdAzureADGraphAccessTokenFromUser
 Export-ModuleMember Get-MSCloudIdAzureADGraphAccessTokenFromCert
 Export-ModuleMember Invoke-MSCloudIdAzureADGraphQuery
+Export-ModuleMember Get-MSCloudIdMSGraphAccessTokenFromCert
+Export-ModuleMember Invoke-MSCloudIdMSGraphQuery
 Export-ModuleMember Get-MSCloudIdAppAssignmentReport
 Export-ModuleMember Remove-MSCloudIdSyncUsers
 Export-ModuleMember Get-MSCloudIdApplicationKeyExpirationReport
@@ -1123,3 +1312,4 @@ Export-ModuleMember Get-MSCloudIdAccessTokenOnBehalfOfUser
 Export-ModuleMember Get-MSCloudIdAppStaleLicensingReportByUser
 Export-ModuleMember Get-MSCloudIdUserLastSigninDateTime
 Export-ModuleMember Get-MSCloudIdIdTokenFromUser
+Export-ModuleMember ConvertFrom-MSCloudIDJWT
