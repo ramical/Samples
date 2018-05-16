@@ -1293,23 +1293,3 @@ function Install-MSCloudIdUtilsModule
     Get-Command -Module MSCloudIdUtils
 
 }
-
-Export-ModuleMember Install-MSCloudIdUtilsModule
-Export-ModuleMember New-MSCloudIdApplicationCertificateCredential
-Export-ModuleMember New-MSCloudIdServicePrincipalSigningCertificate
-Export-ModuleMember Get-MSCloudIdGraphAPIAccessTokenFromAppKey
-Export-ModuleMember Get-MSCloudIdAzureADGraphAccessTokenFromUser
-Export-ModuleMember Get-MSCloudIdAzureADGraphAccessTokenFromCert
-Export-ModuleMember Invoke-MSCloudIdAzureADGraphQuery
-Export-ModuleMember Get-MSCloudIdMSGraphAccessTokenFromCert
-Export-ModuleMember Invoke-MSCloudIdMSGraphQuery
-Export-ModuleMember Get-MSCloudIdAppAssignmentReport
-Export-ModuleMember Remove-MSCloudIdSyncUsers
-Export-ModuleMember Get-MSCloudIdApplicationKeyExpirationReport
-Export-ModuleMember Get-MSCloudIdAppStaleLicensingReport
-Export-ModuleMember Get-MSCloudIdAccessTokenFromUser
-Export-ModuleMember Get-MSCloudIdAccessTokenOnBehalfOfUser
-Export-ModuleMember Get-MSCloudIdAppStaleLicensingReportByUser
-Export-ModuleMember Get-MSCloudIdUserLastSigninDateTime
-Export-ModuleMember Get-MSCloudIdIdTokenFromUser
-Export-ModuleMember ConvertFrom-MSCloudIDJWT
