@@ -1169,7 +1169,7 @@ function Convert-FromBase64StringWithNoPadding([string]$data)
     return [System.Convert]::FromBase64String($data)
 }
 
-function Decode-JWT([string]$rawToken)
+function ConvertFrom-RawToken([string]$rawToken)
 {
     $parts = $rawToken.Split('.');
     $headers = [System.Text.Encoding]::UTF8.GetString((Convert-FromBase64StringWithNoPadding $parts[0]))
@@ -1211,11 +1211,11 @@ function ConvertFrom-MSCloudIDJWT
     if ($Recurse)
     {
         $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($Token))
-        $DecodedJwt = Decode-JWT -rawToken $decoded
+        $DecodedJwt = ConvertFrom-RawToken -rawToken $decoded
     }
     else
     {
-        $DecodedJwt = Decode-JWT -rawToken $Token
+        $DecodedJwt = ConvertFrom-RawToken -rawToken $Token
     }
      Write-Host ($DecodedJwt | Select-Object headers,claims | ConvertTo-Json)
     return $DecodedJwt
