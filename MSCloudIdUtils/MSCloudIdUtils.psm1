@@ -1289,9 +1289,7 @@ function Install-MSCloudIdUtilsModule
 
   }
 
-    Copy-Item "$PSScriptRoot\MSCloudIdUtils.psm1" -Destination $modulePath -Force
-
-
+   
     Get-Command -Module MSCloudIdUtils
 
 }
