@@ -139,7 +139,7 @@ function Initialize-ActiveDirectoryAuthenticationLibrary()
       {
         Write-Host "Fixing Active Directory Authentication Library package directories ..." -ForegroundColor Yellow
         $adalPackageDirectories | Remove-Item -Recurse -Force | Out-Null
-        Write-Host "Not able to load ADAL assembly. Delete the Nugets folder under" $modulePath ", restart PowerShell session and try again ..."
+        Write-Host  ("Not able to load ADAL assembly. Delete the Nugets folder under {0}, restart PowerShell session and try again ..." -f $modulePath)
         return $false
       }
     }
@@ -301,7 +301,7 @@ Function Get-MSCloudIdGraphAPIAccessTokenFromAppKey
     $body = @{grant_type="client_credentials";resource="https://graph.microsoft.com";client_id=$ClientID;client_secret=$ClientSecret}
     $oauth = Invoke-RestMethod -Method Post -Uri $loginURL/$TenantDomain/oauth2/token?api-version=1.0 -Body $body
 
-    if ($oauth.access_token -eq $null) 
+    if ($null -eq $oauth.access_token) 
     {
         throw "ERROR: No Access Token"
     }
@@ -540,7 +540,7 @@ Function Invoke-MSCloudIdAzureADGraphQuery
     while (-not [String]::IsNullOrEmpty($queryUrl))
     {
         $batchResult = (Invoke-WebRequest -Headers $headerParams -Uri $queryUrl).Content | ConvertFrom-Json
-        if ($batchResult.value -ne $null)
+        if ($null -ne $batchResult.value)
         {
             $queryResults += $batchResult.value
         }
@@ -554,14 +554,14 @@ Function Invoke-MSCloudIdAzureADGraphQuery
 
         $odataNextLink = $batchResult | Select-Object -ExpandProperty "@odata.nextLink" -ErrorAction SilentlyContinue
 
-        if ($odataNextLink -ne $null)
+        if ($null -ne $odataNextLink)
         {
             $queryUrl =  $odataNextLink
         }
         else
         {
             $odataNextLink = $batchResult | Select-Object -ExpandProperty "odata.nextLink" -ErrorAction SilentlyContinue
-            if ($odataNextLink -ne $null)
+            if ($null -ne $odataNextLink)
             {
                 $absoluteUri = [Uri]"https://bogus/$odataNextLink"
                 $skipToken = $absoluteUri.Query.TrimStart("?")
@@ -621,7 +621,7 @@ Function Invoke-MSCloudIdMSGraphQuery
     while (-not [String]::IsNullOrEmpty($queryUrl))
     {
         $batchResult = (Invoke-WebRequest -Headers $headerParams -Uri $queryUrl).Content | ConvertFrom-Json
-        if ($batchResult.value -ne $null)
+        if ($null -ne $batchResult.value)
         {
             $queryResults += $batchResult.value
         }
@@ -635,14 +635,14 @@ Function Invoke-MSCloudIdMSGraphQuery
 
         $odataNextLink = $batchResult | Select-Object -ExpandProperty "@odata.nextLink" -ErrorAction SilentlyContinue
 
-        if ($odataNextLink -ne $null)
+        if ($null -ne $odataNextLink)
         {
             $queryUrl =  $odataNextLink
         }
         else
         {
             $odataNextLink = $batchResult | Select-Object -ExpandProperty "odata.nextLink" -ErrorAction SilentlyContinue
-            if ($odataNextLink -ne $null)
+            if ($null -ne $odataNextLink)
             {
                 $absoluteUri = [Uri]"https://bogus/$odataNextLink"
                 $skipToken = $absoluteUri.Query.TrimStart("?")
@@ -726,7 +726,9 @@ $script:TenantSkus = $null
 
 Function Get-AzureADTenantSkus
 {
-    if ($script:TenantSkus -eq $null)
+	[CmdletBinding()]
+	param()
+    if ($null -eq $script:TenantSkus)
     {
         $script:TenantSkus = Get-AzureADSubscribedSku
     }
@@ -762,7 +764,7 @@ Function Get-MSCloudIdUserLastSigninDateTime
     #If we had at least one result, then get-member will retrieve the property metadata
     $atLeastOneSignIn = $signInActivity | Get-Member userId
 
-    if ($atLeastOneSignIn -eq $null)
+    if ($null -eq $atLeastOneSignIn)
     {
         Write-Output $null
     }
@@ -800,14 +802,14 @@ Function Get-MSCloudIdAppStaleLicensingReportByUser
     
     $skuString = ""
         
-    if ($userSkus -ne $null)
+    if ($Null -ne $userSkus)
     {
 
         $skuString = ""
 
         foreach ($userSku in $userSkus)
         {
-            $skuName = $TenantSKUs | where {$_.SkuId -eq $userSku.SkuId} | Select-Object -ExpandProperty SkuPartNumber
+            $skuName = $TenantSKUs | Where-Object {$_.SkuId -eq $userSku.SkuId} | Select-Object -ExpandProperty SkuPartNumber
             $skuString +=  $skuName + ";"
 
         }
@@ -815,7 +817,7 @@ Function Get-MSCloudIdAppStaleLicensingReportByUser
 
     $signinStaleStatus = $null
 
-    if ($LastSignIn -eq $null)
+    if ($null -eq $LastSignIn)
     {
         $signinStaleStatus = "Stale"
     }
@@ -1040,9 +1042,9 @@ Function Remove-MSCloudIdSyncUsers
         Write-Progress -Id 10 -Activity "Removing On-Premises users from your tenant..." -CurrentOperation "Connecting to Azure AD" 
         Connect-MsolService
         Write-Progress -Id 10 -Activity "Removing On-Premises users from your tenant..." -CurrentOperation "Removing users the cloud" 
-        $UsersToRemove = Get-MsolUser -Synchronized | Where {$_.UserPrincipalName -notlike "Sync*"}
-        $UsersToRemove | %{Remove-MsolUser -ObjectId $_.ObjectId -Force }
-        Get-MsolUser -ReturnDeletedUsers | %{ Remove-MsolUser -ObjectId $_.ObjectId -RemoveFromRecycleBin -Force }        
+        $UsersToRemove = Get-MsolUser -Synchronized | Where-Object {$_.UserPrincipalName -notlike "Sync*"}
+        $UsersToRemove | ForEach-Object {Remove-MsolUser -ObjectId $_.ObjectId -Force }
+        Get-MsolUser -ReturnDeletedUsers | ForEach-Object { Remove-MsolUser -ObjectId $_.ObjectId -RemoveFromRecycleBin -Force }        
         $UsersCount = $UsersToRemove | Measure-Object  | Select-Object -ExpandProperty Count
         "$UsersCount have been deleted from the tenant. To Resynchronize, clean the Azure AD Connect connector spaces and force an Initial Sync Cycle"
     }
@@ -1167,7 +1169,7 @@ function Convert-FromBase64StringWithNoPadding([string]$data)
     return [System.Convert]::FromBase64String($data)
 }
 
-function Decode-JWT([string]$rawToken)
+function ConvertFrom-RawToken([string]$rawToken)
 {
     $parts = $rawToken.Split('.');
     $headers = [System.Text.Encoding]::UTF8.GetString((Convert-FromBase64StringWithNoPadding $parts[0]))
@@ -1209,13 +1211,13 @@ function ConvertFrom-MSCloudIDJWT
     if ($Recurse)
     {
         $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($Token))
-        $DecodedJwt = Decode-JWT -rawToken $decoded
+        $DecodedJwt = ConvertFrom-RawToken -rawToken $decoded
     }
     else
     {
-        $DecodedJwt = Decode-JWT -rawToken $Token
+        $DecodedJwt = ConvertFrom-RawToken -rawToken $Token
     }
-     Write-Host ($DecodedJwt | Select headers,claims | ConvertTo-Json)
+     Write-Host ($DecodedJwt | Select-Object headers,claims | ConvertTo-Json)
     return $DecodedJwt
 }
 
@@ -1237,7 +1239,7 @@ function Install-MSCloudIdUtilsModule
     param()
 
     $myDocumentsModuleFolderIsInPSModulePath = $false
-    [Environment]::GetEnvironmentVariable("PSModulePath") -Split ';' | % {
+    [Environment]::GetEnvironmentVariable("PSModulePath") -Split ';' | ForEach-Object {
       if ($_.ToLower() -eq ([Environment]::GetFolderPath("MyDocuments") + "\WindowsPowerShell\Modules").ToLower()){
         $myDocumentsModuleFolderIsInPSModulePath = $true
       }
@@ -1287,9 +1289,7 @@ function Install-MSCloudIdUtilsModule
 
   }
 
-    Copy-Item "$PSScriptRoot\MSCloudIdUtils.psm1" -Destination $modulePath -Force
-
-    Import-Module MSCloudIdUtils
+   
     Get-Command -Module MSCloudIdUtils
 
 }
