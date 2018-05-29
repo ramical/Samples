@@ -1279,7 +1279,7 @@ function Install-MSCloudIdUtilsModule
       $wc.DownloadFile("http://www.nuget.org/nuget.exe",$modulePath + "\Nugets\nuget.exe");
     }
 
-    $nugetUpdateExpression = $modulePath + "\Nugets\nuget.exe update -self"
+    $nugetUpdateExpression = '&"'+$modulePath + '\Nugets\nuget.exe" update -self';
     Invoke-Expression $nugetUpdateExpression
 
     $nugetDownloadExpression = $modulePath + "\Nugets\nuget.exe install Microsoft.IdentityModel.Clients.ActiveDirectory -Version 2.14.201151115 -OutputDirectory " + $modulePath + "\Nugets | out-null"
