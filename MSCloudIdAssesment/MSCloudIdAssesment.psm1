@@ -421,10 +421,12 @@ Function Export-MSCloudIdADFSConfiguration
     invoke-item $zipfileBase
 }
 
+Export-ModuleMember -Function Start-MSCloudIdSession
 Export-ModuleMember -Function Get-MSCloudIdAppProxyConnectorLog
 Export-ModuleMember -Function Get-MSCloudIdPasswordWritebackAgentLog
 Export-ModuleMember -Function Get-MSCloudIdNotificationEmailAddresses
-Export-ModuleMember -Function Start-MSCloudIdSession		
 Export-ModuleMember -Function Get-MSCloudIdAppAssignmentReport
+Export-ModuleMember -Function Get-MSCloudIdAdminRolesReport
 Export-ModuleMember -Function Get-MSCloudIdConsentGrantList
+Export-ModuleMember -Function Get-MSCloudIdADFSEndpoints
 Export-ModuleMember -Function Export-MSCloudIdADFSConfiguration

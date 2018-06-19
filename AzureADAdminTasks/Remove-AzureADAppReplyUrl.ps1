@@ -16,13 +16,11 @@
 
     Copyright (c) Microsoft Corporation. All rights reserved.
 #>
-[CmdletBinding(SupportsShouldProcess = $true)]
-
+[CmdletBinding())]
 param(
     [Parameter(Mandatory=$true)]    
     [string] 
     $ApplicationObjectId,
-
     [Parameter(Mandatory=$true)]
     [String]
     $ReplyUrlToRemove
