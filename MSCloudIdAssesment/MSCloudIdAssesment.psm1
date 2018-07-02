@@ -1,4 +1,4 @@
-#Requires -Version 5
+#Requires -Version 4
 
 <# 
  
@@ -417,7 +417,14 @@ Function Export-MSCloudIdADFSConfiguration
  
     } 
 
-    Compress-Archive -Path $filePathBase -DestinationPath $zipfileName
+    If (Test-Path $zipfileName)
+    {
+        Remove-Item $zipfileName
+    }
+
+    Add-Type -assembly "system.io.compression.filesystem"
+    [io.compression.zipfile]::CreateFromDirectory($filePathBase, $zipfileName)
+    
     invoke-item $zipfileBase
 }
 
