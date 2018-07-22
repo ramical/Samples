@@ -109,7 +109,7 @@ function Get-MSCloudIdPasswordWritebackAgentLog
 function Get-MSCloudIdNotificationEmailAddresses
 {
     $technicalNotificationEmail = Get-MSOLCompanyInformation | Select -ExpandProperty TechnicalNotificationEmails
-    $result = New-Object -TypeName psobject -Property @{ NotificationEmailScope = "Tenant"; NotificationType = "Technical Notification"; RecipientName = "N/A";  EmailAddress = $technicalNotificationEmail }
+    $result = New-Object -TypeName psobject -Property @{ NotificationEmailScope = "Tenant"; NotificationType = "Technical Notification"; RecipientName = "N/A";  EmailAddress = $technicalNotificationEmail; ; RoleMemberObjectType = "email address"; RoleMemberAlternateEmail = "N/A" }
 
     Write-Output $result
 
@@ -122,7 +122,7 @@ function Get-MSCloudIdNotificationEmailAddresses
         $roleMembers = Get-AzureADDirectoryRoleMember -ObjectId $role.ObjectId
         foreach ($roleMember in $roleMembers)
         {
-            $result = New-Object -TypeName psobject -Property @{ NotificationEmailScope = "Role"; NotificationType = $role.DisplayName; RecipientName = $roleMember.DisplayName;  EmailAddress = $roleMember.Mail }
+            $result = New-Object -TypeName psobject -Property @{ NotificationEmailScope = "Role"; NotificationType = $role.DisplayName; RecipientName = $roleMember.DisplayName;  EmailAddress = $roleMember.Mail; RoleMemberObjectType = $roleMember.ObjectType; RoleMemberAlternateEmail = $roleMember.OtherMails }
             Write-Output $result
         }
     }
@@ -166,7 +166,7 @@ function Get-MSCloudIdAdminRolesReport
         $roleMembers = Get-AzureADDirectoryRoleMember -ObjectId $role.ObjectId
         foreach ($roleMember in $roleMembers)
         {
-            $result = New-Object -TypeName psobject -Property @{ RoleName = $role.DisplayName; RoleMemberDisplayName = $roleMember.DisplayName; RoleMemberEmail = $roleMember.Mail; RoleMemberUPN = $roleMember.UserPrincipalName }
+            $result = New-Object -TypeName psobject -Property @{ RoleName = $role.DisplayName; RoleMemberDisplayName = $roleMember.DisplayName; RoleMemberEmail = $roleMember.Mail; RoleMemberUPN = $roleMember.UserPrincipalName; RoleMemberObjectType = $roleMember.ObjectType }
             Write-Output $result
         }
     }
