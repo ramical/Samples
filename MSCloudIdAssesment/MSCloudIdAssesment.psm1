@@ -144,7 +144,7 @@ function Get-MSCloudIdAppAssignmentReport
 	#Get all app assignemnts using "all users" group
 	#Get all app assignments to users directly
 
-    Get-AzureADServicePrincipal -All $true | Get-AzureADServiceAppRoleAssignment
+    Get-AzureADServicePrincipal -All $true | Get-AzureADServiceAppRoleAssignedTo -All $true
 }
 
 <# 
