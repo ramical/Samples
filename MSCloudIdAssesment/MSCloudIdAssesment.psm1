@@ -122,7 +122,8 @@ function Get-MSCloudIdNotificationEmailAddresses
         $roleMembers = Get-AzureADDirectoryRoleMember -ObjectId $role.ObjectId
         foreach ($roleMember in $roleMembers)
         {
-            $result = New-Object -TypeName psobject -Property @{ NotificationEmailScope = "Role"; NotificationType = $role.DisplayName; RecipientName = $roleMember.DisplayName;  EmailAddress = $roleMember.Mail; RoleMemberObjectType = $roleMember.ObjectType; RoleMemberAlternateEmail = $roleMember.OtherMails }
+            $alternateEmail = $roleMember.OtherMails -join ";"
+            $result = New-Object -TypeName psobject -Property @{ NotificationEmailScope = "Role"; NotificationType = $role.DisplayName; RecipientName = $roleMember.DisplayName;  EmailAddress = $roleMember.Mail; UPN = $roleMember.UserPrincipalName; RoleMemberObjectType = $roleMember.ObjectType; RoleMemberAlternateEmail = $alternateEmail }
             Write-Output $result
         }
     }
