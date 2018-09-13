@@ -775,7 +775,7 @@ Function Invoke-TestFunctions([array]$functionsToRun, $ADFSRelyingPartyTrust)
  
  .Example 
   Run the test from the ADFS Federation Server:
-  Get-AdfsRelyingPartyTrust -Identifier urn:federation:MicrosoftOnline | Test-ADFS2AADOnPremRPTrust 
+  Get-AdfsRelyingPartyTrust -Identifier urn:myCRMApp | Test-ADFS2AADOnPremRPTrust  
 #> 
 
 
