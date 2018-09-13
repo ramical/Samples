@@ -34,31 +34,10 @@ Function Remove-InvalidFileNameChars
   return ($Name -replace $re)
 }
 
-Function Export-ADFS2AADOnPremRPTrusts
-{
-    $filePathBase = "$env:SystemDrive\ADFS\apps\"
-    $zipfileBase = "$env:SystemDrive\ADFS\zip\"
-    $zipfileName = $zipfileBase + "ADFSApps.zip"
-    mkdir $filePathBase -ErrorAction SilentlyContinue
-    mkdir $zipfileBase -ErrorAction SilentlyContinue
 
-    $AdfsRelyingPartyTrusts = Get-AdfsRelyingPartyTrust
-    foreach ($AdfsRelyingPartyTrust in $AdfsRelyingPartyTrusts)
-    {
-        $CleanedFileName = Remove-InvalidFileNameChars -Name $AdfsRelyingPartyTrust.Name
-        $filePath = $filePathBase + $CleanedFileName + '.xml'
-        $AdfsRelyingPartyTrust | Export-Clixml $filePath -ErrorAction SilentlyContinue
-    }
-
-    Compress-Archive -Path $filePathBase -DestinationPath $zipfileName -Force 
-
-    Dir $zipfileName
-}
-
-
-###AD FS Relying Party Migration Checks
-
-
+###########################################
+# RP Trust Claim Rule checks
+###########################################
 
 Add-Type -Language CSharp @"
 public class MigrationTestResult
@@ -173,18 +152,15 @@ Function Invoke-ADFSClaimRuleAnalysis
     param
     (    
         [String]
+        $RuleSetName,
+        [String]
         $ADFSRuleSet,
         [Parameter(Mandatory=$true)]
         [System.Collections.Hashtable]
-        $KnownRules,
-        [Switch]
-        $SummarizeResult,
-        [String]
-        $RuleSetName        
+        $KnownRules
     )
 
-    #BUGBUG: This is very flaky 
-    #$ADFSRuleArray = $ADFSRuleSet.TrimEnd().Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
+    #Task 1: Compare rule against known patterns of migratable rules
 
     $ADFSRuleArray = @()
 
@@ -200,10 +176,16 @@ Function Invoke-ADFSClaimRuleAnalysis
 
     foreach($Rule in $ADFSRuleArray.ClaimRules)
     {
+        #Create result object
+        $Result = new-object PSObject
+        $Result | Add-Member -NotePropertyName "RuleSet" -NotePropertyValue $RuleSetName
+        $Result | Add-Member -NotePropertyName "Rule" -NotePropertyValue $Rule
         $ruleIndex++
+
+
+        #Task 1: Find Match to known pattern
         $matchFound = $false
-        $RuleResultDetail = ""
-        $RuleAnalysisPass = $false
+        $migratablePatternName = "N/A"
 
         foreach($knownRuleKey in $KnownRules.Keys)
         {
@@ -212,29 +194,140 @@ Function Invoke-ADFSClaimRuleAnalysis
                         
             if ($rule -match $knownRuleRegex)
             {
-                $RuleResultDetail = "Rule '{0}' matches known AD FS rule pattern '{1}'{2}" -f $ruleIndex, $knownRuleKey, [Environment]::NewLine
+                $migratablePatternName = $knownRuleKey
                 $matchFound = $true
-                $RuleAnalysisPass = $true
             }
         }
-        if (-not $matchFound)
+
+        $Result | Add-Member -NotePropertyName "IsKnownRuleMigratablePattern" -NotePropertyValue $matchFound
+        $Result | Add-Member -NotePropertyName "KnownRulePatternName" -NotePropertyValue $migratablePatternName
+
+
+        #Task 2: Break down condition and issuance statement        
+        #Assumption: There is only one "=>" unambigous match in the rule
+        $separatorIndex = $Rule.IndexOf("=>") 
+        $conditionStatement = $Rule.Substring(0,$separatorIndex).Trim();
+        $issuanceStatement = $Rule.Substring($separatorIndex+2).Trim();
+
+        $Result | Add-Member -NotePropertyName "ConditionStatement" -NotePropertyValue $conditionStatement
+        $Result | Add-Member -NotePropertyName "IssuanceStatement" -NotePropertyValue $issuanceStatement
+
+        #Task 3: Find claim types in the condition statement
+        $TypeRegex = '(?i)type\s+={1,2}\s+"(.*?)"'
+        $ConditionTypeMatch = [Regex]::Match($conditionStatement, $TypeRegex)
+        if ($ConditionTypeMatch.Success)
         {
-            $RuleResultDetail = "Rule '{0}' does not match any known pattern. Rule='{1}'{2}" -f $ruleIndex, $rule, [Environment]::NewLine
-            $AnalysisPassed = $false            
+            #TODO: How does this work with claims with multiple condition in the types (eg. c:[Type=="foo"] && c1:[Type=="bar"]
+            $ConditionClaimType = $ConditionTypeMatch.Groups[1].ToString()
+            $Result | Add-Member -NotePropertyName "ConditionClaimType" -NotePropertyValue $ConditionClaimType
+
+            $GroupFilter = "N/A"
+
+            if ($ConditionClaimType -eq "http://schemas.xmlsoap.org/claims/Group")
+            {
+                $GroupFilterRegex = '(?i)Value\s+(=(~|=)\s+"(.*?)")'
+                $GroupFilterMatch = [Regex]::Match($conditionStatement, $GroupFilterRegex)
+                if ($GroupFilterMatch.Success)
+                {
+                    $GroupFilter = $GroupFilterMatch.Groups[1].ToString()
+                }
+            }
+
+            $Result | Add-Member -NotePropertyName "GroupFilter" -NotePropertyValue $GroupFilter
         }
 
-        if (-not $SummarizeResult)
+        #Task 4: Find claim types in the issuance statement -- explicit Type = .* 
+
+        $IssuanceClaimTypes = @()
+
+        $IssuanceTypeMatch = [Regex]::Match($issuanceStatement, $TypeRegex)
+        if ($IssuanceTypeMatch.Success)
         {
-            New-Object PSObject -Property @{ ClaimRule=$rule; ClaimRuleIndex=$ruleIndex; AnalysisPassed=$RuleAnalysisPass; Detail=$RuleResultDetail; RuleSetName = $RuleSetName }
+            $IssuanceClaimTypes += $IssuanceTypeMatch.Groups[1].ToString()
         }
 
-        $Details += $RuleResultDetail
+        #Task 4a : Find claim types in the issuance statement from the Attribute Store
+        $AttributeStoreRuleRegex = '(?i).*store\s*=\s*"(.*?)"'
+        $AttributeStoreName = "N/A"
+        $AttributeStoreQuery = "N/A"
+        $ActiveDirectoryAttributesSplit = @()
+
+
+        $AttributeStoreRuleMatch = [Regex]::Match($issuanceStatement, $AttributeStoreRuleRegex)
+        if ($AttributeStoreRuleMatch.Success)
+        {
+            $AttributeStoreName = $AttributeStoreRuleMatch.Groups[1].ToString()
+            $AttributeStoreRuleTypesRegex = '(?i)types\s*=\s*\("(.*)"\)'
+            $AttributeStoreRuleTypesMatch = [Regex]::Match($issuanceStatement, $AttributeStoreRuleTypesRegex)
+            
+            if ($AttributeStoreRuleTypesMatch.Success)
+            {
+                $IssuanceClaimTypes += $AttributeStoreRuleTypesMatch.Groups[1].ToString().Split(',');
+            }
+
+            #Task 4b: Extract the attributes retrieved from the store
+            $AttributeStoreQueryRegex = '(?i)query\s*=\s*"(.*)"'
+            $AttributeStoreQueryMatch = [Regex]::Match($issuanceStatement, $AttributeStoreQueryRegex)
+            
+            if ($AttributeStoreQueryMatch.Success)
+            {
+                $AttributeStoreQuery = $AttributeStoreQueryMatch.Groups[1].ToString();
+                if ($AttributeStoreName -ieq "Active Directory")
+                {
+                    $AttributeStoreQuerySplit = $AttributeStoreQuery.Split(';');
+                    $ActiveDirectoryAttributes = $AttributeStoreQuerySplit[1];
+                    $ActiveDirectoryAttributesSplit = $ActiveDirectoryAttributes.Split(',')
+
+                }
+            }
+        }
+
+        $Result | Add-Member -NotePropertyName "IssuanceClaimTypes" -NotePropertyValue $IssuanceClaimTypes
+        $Result | Add-Member -NotePropertyName "AttributeStoreName" -NotePropertyValue $AttributeStoreName                
+        $Result | Add-Member -NotePropertyName "AttributeStoreQuery" -NotePropertyValue $AttributeStoreQuery
+        $Result | Add-Member -NotePropertyName "ADAttributes" -NotePropertyValue $ActiveDirectoryAttributesSplit
+
+        Write-Output $Result
     }
 
-    if ($SummarizeResult)
+}
+
+Function Test-ADFSRPRuleset
+{
+    [CmdletBinding()]
+    param
+    (   
+        [Parameter(Mandatory=$true)]
+        [String]
+        $RulesetName, 
+        [String]
+        $ADFSRuleSet,
+        [Parameter(Mandatory=$true)]
+        [System.Collections.Hashtable]
+        $KnownRules,
+        [Parameter(Mandatory=$true)]
+        [ResultType]
+        $ResultTypeIfUnknownPattern
+    )
+
+    $TestResult = New-Object MigrationTestResult
+
+    $RuleAnalysisResult = Invoke-ADFSClaimRuleAnalysis -ADFSRuleSet $ADFSRuleSet -KnownRules $KnownRules -RuleSetName $RulesetName
+
+    #Capture the expanded details of each rule as a result
+    $TestResult.Details.Add("ClaimRuleProperties", $RuleAnalysisResult)
+
+    #Insight 1: Did we find claim rules that don't match any template
+    $UnknownClaimRulePatternFound = ($RuleAnalysisResult | where {$_.IsKnownRuleMigratablePattern -eq $false}).Count -gt 0
+    $TestResult.Details.Add("UnkwnownPatternFound", $UnknownClaimRulePatternFound)
+
+    if ($UnknownClaimRulePatternFound)
     {
-        New-Object PSObject -Property @{ AnalysisPassed = $AnalysisPassed; Details = $Details.Trim(); RuleSetName = $RuleSetName  }
+        $TestResult.Result = $ResultTypeIfUnknownPattern
+        $TestResult.Message = "At least one non-migratable rule was detected"        
     }
+
+    Return $TestResult
 }
 
 Function Test-ADFSRPAdditionalAuthenticationRules
@@ -243,25 +336,88 @@ Function Test-ADFSRPAdditionalAuthenticationRules
     param
     (    
         [Parameter(Mandatory=$true)]
-        $ADFSRelyingPartyTrust,
-        [Switch]
-        $SummarizeResult
+        $ADFSRelyingPartyTrust
     )
 
-    $TestResult = New-Object MigrationTestResult
+    Test-ADFSRPRuleset `
+        -RulesetName "AdditionalAuthentication" `
+        -ADFSRuleSet $ADFSRelyingPartyTrust.AdditionalAuthenticationRules `
+        -KnownRules $MFAMigratableRules `
+        -ResultTypeIfUnknownPattern Fail
 
-    $RuleAnalysis = Invoke-ADFSClaimRuleAnalysis -ADFSRuleSet $ADFSRelyingPartyTrust.AdditionalAuthenticationRules -KnownRules $MFAMigratableRules -SummarizeResult:$SummarizeResult -RuleSetName "AdditionalAuthentication"
-
-    if (-not $RuleAnalysis.AnalysisPassed)
-    {
-        $TestResult.Result = [ResultType]::Fail
-        $TestResult.Message = "At least one non-migratable rule was detected"        
-    }
-
-    $TestResult.Details.Add("MFARuleAnalysisResult", $RuleAnalysis.Details)
-
-    Return $TestResult
 }
+
+Function Test-ADFSRPDelegationAuthorizationRules
+{
+    [CmdletBinding()]
+    param
+    (    
+        [Parameter(Mandatory=$true)]
+        $ADFSRelyingPartyTrust
+    )
+
+    Test-ADFSRPRuleset `
+        -RulesetName "DelegationAuthorization" `
+        -ADFSRuleSet $ADFSRelyingPartyTrust.DelegationAuthorizationRules `
+        -KnownRules $DelegationMigratableRules `
+        -ResultTypeIfUnknownPattern Warning
+
+}
+
+Function Test-ADFSRPImpersonationAuthorizationRules
+{
+    [CmdletBinding()]
+    param
+    (    
+        [Parameter(Mandatory=$true)]
+        $ADFSRelyingPartyTrust
+    )
+
+    Test-ADFSRPRuleset `
+        -RulesetName "ImpersonationAuthorization" `
+        -ADFSRuleSet $ADFSRelyingPartyTrust.ImpersonationAuthorizationRules `
+        -KnownRules $ImpersonationMigratableRules `
+        -ResultTypeIfUnknownPattern Warning
+
+}
+
+Function Test-ADFSRPIssuanceAuthorizationRules
+{
+    [CmdletBinding()]
+    param
+    (    
+        [Parameter(Mandatory=$true)]
+        $ADFSRelyingPartyTrust
+    )
+
+    Test-ADFSRPRuleset `
+        -RulesetName "IssuanceAuthorization" `
+        -ADFSRuleSet $ADFSRelyingPartyTrust.IssuanceAuthorizationRules `
+        -KnownRules $IssuanceAuthorizationMigratableRules `
+        -ResultTypeIfUnknownPattern Warning
+}
+
+Function Test-ADFSRPIssuanceTransformRules
+{
+    [CmdletBinding()]
+    param
+    (    
+        [Parameter(Mandatory=$true)]
+        $ADFSRelyingPartyTrust
+    )
+
+    Test-ADFSRPRuleset `
+        -RulesetName "IssuanceTransform" `
+        -ADFSRuleSet $ADFSRelyingPartyTrust.IssuanceTransformRules `
+        -KnownRules $IssuanceTransformMigratableRules `
+        -ResultTypeIfUnknownPattern Warning
+
+}
+
+
+###########################################
+# RP Trust properties migration checks
+###########################################
 
 Function Test-ADFSRPAdditionalWSFedEndpoint
 {
@@ -402,32 +558,6 @@ Function Test-ADFSRPClaimsProviderName
     Return $TestResult
 }
 
-Function Test-ADFSRPDelegationAuthorizationRules
-{
-    [CmdletBinding()]
-    param
-    (    
-        [Parameter(Mandatory=$true)]
-        $ADFSRelyingPartyTrust,
-        [Switch]
-        $SummarizeResult
-    )
-
-    $TestResult = New-Object MigrationTestResult
-
-    $RuleAnalysis = Invoke-ADFSClaimRuleAnalysis -ADFSRuleSet $ADFSRelyingPartyTrust.DelegationAuthorizationRules -KnownRules $DelegationMigratableRules -SummarizeResult:$SummarizeResult -RuleSetName "DelegationAuthorization"
-
-    if (-not $RuleAnalysis.AnalysisPassed)
-    {
-        $TestResult.Result = [ResultType]::Warning
-        $TestResult.Message = "Delegation Rules detected"        
-    }
-
-    $TestResult.Details.Add("DelegationAuthorizationRulesAnalysisResult", $RuleAnalysis.Details)
-
-    Return $TestResult
-}
-
 Function Test-ADFSRPEncryptClaims
 {
     [CmdletBinding()]
@@ -452,84 +582,6 @@ Function Test-ADFSRPEncryptClaims
 
     $TestResult.Details.Add("EncryptClaims", $ADFSRelyingPartyTrust.EncryptClaims)
     $TestResult.Details.Add("EncryptedNameIdRequired", $ADFSRelyingPartyTrust.EncryptedNameIdRequired)
-
-    Return $TestResult
-}
-
-Function Test-ADFSRPImpersonationAuthorizationRules
-{
-    [CmdletBinding()]
-    param
-    (    
-        [Parameter(Mandatory=$true)]
-        $ADFSRelyingPartyTrust,
-        [Switch]
-        $SummarizeResult
-    )
-
-    $TestResult = New-Object MigrationTestResult
-
-    $RuleAnalysis = Invoke-ADFSClaimRuleAnalysis -ADFSRuleSet $ADFSRelyingPartyTrust.ImpersonationAuthorizationRules -KnownRules $ImpersonationMigratableRules -SummarizeResult:$SummarizeResult -RuleSetName "ImpersonationAuthorization"
-
-    if (-not $RuleAnalysis.AnalysisPassed)
-    {
-        $TestResult.Result = [ResultType]::Warning
-        $TestResult.Message = "Impersonation Rules detected"        
-    }
-
-    $TestResult.Details.Add("ImpersonationAuthorizationRulesAnalysisResult", $RuleAnalysis.Details)
-
-    Return $TestResult
-}
-
-Function Test-ADFSRPIssuanceAuthorizationRules
-{
-    [CmdletBinding()]
-    param
-    (    
-        [Parameter(Mandatory=$true)]
-        $ADFSRelyingPartyTrust,
-        [Switch]
-        $SummarizeResult
-    )
-
-    $TestResult = New-Object MigrationTestResult
-
-    $RuleAnalysis = Invoke-ADFSClaimRuleAnalysis -ADFSRuleSet $ADFSRelyingPartyTrust.IssuanceAuthorizationRules -KnownRules $IssuanceAuthorizationMigratableRules -SummarizeResult:$SummarizeResult -RuleSetName "IssuanceAuthorization"
-
-    if (-not $RuleAnalysis.AnalysisPassed)
-    {
-        $TestResult.Result = [ResultType]::Warning
-        $TestResult.Message = "Non-migratable issuance authorization rules detected"        
-    }
-
-    $TestResult.Details.Add("IssuanceAuthorizationRulesAnalysisResult", $RuleAnalysis.Details)
-
-    Return $TestResult
-}
-
-Function Test-ADFSRPIssuanceTransformRules
-{
-    [CmdletBinding()]
-    param
-    (    
-        [Parameter(Mandatory=$true)]
-        $ADFSRelyingPartyTrust,
-        [Switch]
-        $SummarizeResult
-    )
-
-    $TestResult = New-Object MigrationTestResult
-
-    $RuleAnalysis = Invoke-ADFSClaimRuleAnalysis -ADFSRuleSet $ADFSRelyingPartyTrust.IssuanceTransformRules -KnownRules $IssuanceTransformMigratableRules -SummarizeResult:$SummarizeResult -RuleSetName "IssuanceTransform"
-
-    if (-not $RuleAnalysis.AnalysisPassed)
-    {
-        $TestResult.Result = [ResultType]::Warning
-        $TestResult.Message = "Non-migratable issuance transform rules detected"        
-    }
-
-    $TestResult.Details.Add("IssuanceTransformRulesAnalysisResult", $RuleAnalysis.Details)
 
     Return $TestResult
 }
@@ -702,26 +754,51 @@ Function Invoke-TestFunctions([array]$functionsToRun, $ADFSRelyingPartyTrust)
     return $results
 }
 
-Function Test-ADFSRPTrustAADMigration
+
+<# 
+ .Synopsis
+  Analyzes an individual Relying Party trust object  
+
+ .Description
+  The cmdlet expects an RP Trust object and returns an object with four complex properties: 
+  * AggregateReportRow: Object with  individual properties per each compatibility test performed
+  (e.g. Test-ADFSRPAdditionalWSFedEndpoint)
+  * AttributeReportRows: List of Active Directory Attributes found in the RP Trust rule sets. 
+  There is one element in the list for every attribute found
+  * AttributeStoreReportRows: List of Attribute Stores found in the RP Trust rule sets. There is one 
+  element for every RP Trust and Attribute store found
+  * ClaimTypeReportRows: List of Claim Types found in the RP Trust rule sets. There is one row for every 
+  RP Trust and Claim Type found
+
+ .Parameter ADFSRPTrust
+  AD FS Relying party trust Object (either deserialized from a file or straight from AD FS Powershell) 
+ 
+ .Example 
+  Run the test from the ADFS Federation Server:
+  Get-AdfsRelyingPartyTrust -Identifier urn:federation:MicrosoftOnline | Test-ADFS2AADOnPremRPTrust 
+#> 
+
+
+Function Test-ADFS2AADOnPremRPTrust
 {
     [CmdletBinding()]
     param
     (    
-        [Parameter(Mandatory=$true)]
-        $ADFSRelyingPartyTrust
+        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+        $ADFSRPTrust
     )
-    
-    $functionsToRun =  @( `
+
+     $functionsToRun =  @( `
 	    "Test-ADFSRPAdditionalAuthenticationRules",
         "Test-ADFSRPAdditionalWSFedEndpoint",
         "Test-ADFSRPAllowedAuthenticationClassReferences",
         "Test-ADFSRPAlwaysRequireAuthentication",
         "Test-ADFSRPAutoUpdateEnabled",
         "Test-ADFSRPClaimsProviderName",
-        "Test-ADFSRPDelegationAuthorizationRules",
+        "Test-ADFSRPDelegationAuthorizationRules", #out
         "Test-ADFSRPEncryptClaims",
-        "Test-ADFSRPImpersonationAuthorizationRules",
-        "Test-ADFSRPIssuanceAuthorizationRules",
+        "Test-ADFSRPImpersonationAuthorizationRules", #out
+        "Test-ADFSRPIssuanceAuthorizationRules", #out
         "Test-ADFSRPIssuanceTransformRules",
         "Test-ADFSRPMonitoringEnabled",
         "Test-ADFSRPNotBeforeSkew",
@@ -730,138 +807,267 @@ Function Test-ADFSRPTrustAADMigration
         "Test-ADFSRPTokenLifetime"
     );
 
+    $rpTestResults  =  Invoke-TestFunctions -FunctionsToRun $functionsToRun -ADFSRelyingPartyTrust $ADFSRPTrust
 
-    Return Invoke-TestFunctions -FunctionsToRun $functionsToRun -ADFSRelyingPartyTrust $ADFSRelyingPartyTrust
-}
+    $attributeReportRows = @()
+    $attributeStoreReportRows = @()
+    $claimTypesReportRows = @()
 
-Function Test-ADFSConfigClaimRules
-{
-    [CmdletBinding()]
-    param
-    (    
-        [Parameter(Mandatory=$true)]
-        $ADFSConfigFilesPath,
-        [Parameter(Mandatory=$true)]
-        [System.Collections.Hashtable]
-        $ReportMetadata
-    )
 
-    $fileEntries = [IO.Directory]::GetFiles("$ADFSConfigFilesPath\apps");
-    $totalFiles = $fileEntries.Count
-    $rpCount = 0
-    foreach($fileName in $fileEntries) 
+    #now, assemble the result object
+    $aggregateReportRow= New-Object -TypeName PSObject
+    $aggregateReportRow| Add-Member -MemberType NoteProperty -Name "RP Name" -Value $ADFSRPTrust.Name
+    $aggregateReportRow| Add-Member -MemberType NoteProperty -Name "Result" -Value Pass
+
+    $aggregateMessage = ""
+    $aggregateDetail = ""
+    $aggregateNotPassTests = ""     
+
+
+    foreach($rpTestResult in $rpTestResults)
     {
-        $rpCount++
-        $percent = 100 * $rpCount / $totalFiles
-        #Write-Progress -Activity "Analyzing Relying Parties" -Status $fileName -PercentComplete $percent -Id 1
-        #Write-Debug $fileName
-        $ADFSRelyingPartyTrust = Import-clixml $fileName
-        
-        $Results = @() 
-        $Results += Invoke-ADFSClaimRuleAnalysis -ADFSRuleSet $ADFSRelyingPartyTrust.AdditionalAuthenticationRules -KnownRules $MFAMigratableRules -RuleSetName "AdditionalAuthenticationRules"
-        $Results += Invoke-ADFSClaimRuleAnalysis -ADFSRuleSet $ADFSRelyingPartyTrust.DelegationAuthorizationRules -KnownRules $DelegationMigratableRules -RuleSetName "DelegationAuthorizationRules"
-        $Results += Invoke-ADFSClaimRuleAnalysis -ADFSRuleSet $ADFSRelyingPartyTrust.ImpersonationAuthorizationRules -KnownRules $ImpersonationMigratableRules -RuleSetName "ImpersonationAuthorizationRules"
-        $Results += Invoke-ADFSClaimRuleAnalysis -ADFSRuleSet $ADFSRelyingPartyTrust.IssuanceAuthorizationRules -KnownRules $IssuanceAuthorizationMigratableRules -RuleSetName "IssuanceAuthorizationRules"
-        $Results += Invoke-ADFSClaimRuleAnalysis -ADFSRuleSet $ADFSRelyingPartyTrust.IssuanceTransformRules -KnownRules $IssuanceTransformMigratableRules -RuleSetName "IssuanceTransformRules"
 
-        foreach($result in $Results)
+        $aggregateReportRow | Add-Member -MemberType NoteProperty -Name $rpTestResult.TestName -Value $rpTestResult.Result
+
+        if ($rpTestResult.Result -eq [ResultType]::Fail)
         {
-            $result | Add-Member -MemberType NoteProperty -Name "RP Name" -Value $ADFSRelyingPartyTrust.Name
-            if ($ReportMetadata -ne $null)
-            {
-                foreach ($metadataKey in $ReportMetadata.Keys)
-                {
-                    $value = $ReportMetadata[$metadataKey]
-                    $result | Add-Member -MemberType NoteProperty -Name $metadataKey -Value $value
-                }
-            }
-            Write-Output $result
-        }        
-    }
-}
+            $aggregateReportRow.Result = [ResultType]::Fail
+            $aggregateNotPassTests += $rpTestResult.TestName + "(Fail);" 
+        }
 
-Function Test-ADFSConfigAADMigration
-{
-    [CmdletBinding()]
-    param
-    (    
-        [Parameter(Mandatory=$true)]
-        $ADFSConfigFilesPath,
-        [Switch]
-        $AggregateResults
-    )
-
-    $fileEntries = [IO.Directory]::GetFiles("$ADFSConfigFilesPath\apps");
-    $totalFiles = $fileEntries.Count
-    $rpCount = 0
-    foreach($fileName in $fileEntries) 
-    {
-        $rpCount++
-        $percent = 100 * $rpCount / $totalFiles
-        #Write-Progress -Activity "Analyzing Relying Parties" -Status $fileName -PercentComplete $percent -Id 1
-        $ADFSRPTrust = Import-clixml $fileName
-        $rpTestResults  = Test-ADFSRPTrustAADMigration -ADFSRelyingPartyTrust $ADFSRPTrust
-
-        #now, assemble the result
-        $reportRow = New-Object -TypeName PSObject
-        $reportRow | Add-Member -MemberType NoteProperty -Name "RP Name" -Value $ADFSRPTrust.Name
-        $reportRow | Add-Member -MemberType NoteProperty -Name "Result" -Value Pass
-
-        $aggregateMessage = ""
-        $aggregateDetail = ""
-        $aggregateNotPassTests = ""
-        
-
-        foreach($rpTestResult in $rpTestResults)
+        if ($rpTestResult.Result -eq [ResultType]::Warning -and $reportRow.Result -ne [ResultType]::Fail)
         {
-            if ($AggregateResults)
-            {
-                $reportRow | Add-Member -MemberType NoteProperty -Name $rpTestResult.TestName -Value $rpTestResult.Result
+            $aggregateReportRow.Result = [ResultType]::Warning
+            $aggregateNotPassTests += $rpTestResult.TestName + "(Warning);"
+        }
 
-                if ($rpTestResult.Result -eq [ResultType]::Fail)
-                {
-                    $reportRow.Result = [ResultType]::Fail
-                    $aggregateNotPassTests += $rpTestResult.TestName + "(Fail);" 
-                }
-
-                if ($rpTestResult.Result -eq [ResultType]::Warning -and $reportRow.Result -ne [ResultType]::Fail)
-                {
-                    $reportRow.Result = [ResultType]::Warning
-                    $aggregateNotPassTests += $rpTestResult.TestName + "(Warning);"
-                }
-
-                
-
-                if (-Not [String]::IsNullOrWhiteSpace( $rpTestResult.Message))
-                {
-                    $aggregateMessage += $rpTestResult.TestName + "::" + $rpTestResult.Message.replace("`r``n",",") + "||"              
-                }
+        if (-Not [String]::IsNullOrWhiteSpace( $rpTestResult.Message))
+        {
+            $aggregateMessage += $rpTestResult.TestName + "::" + $rpTestResult.Message.replace("`r``n",",") + "||"              
+        }
             
-                foreach($detailKey in $rpTestResult.Details.Keys)
+        foreach($detailKey in $rpTestResult.Details.Keys)
+        {
+            if (-Not [String]::IsNullOrWhiteSpace($rpTestResult.Details[$detailKey]))
+            {
+                $aggregateDetail += $rpTestResult.TestName + "::" + $detailKey + "->" +  $rpTestResult.Details[ $detailKey].ToString().replace("`r`n",",") + "||"
+            }
+
+            #additional parsing for claim rule checks
+            if ($detailKey -eq "ClaimRuleProperties")
+            {
+                $ClaimRuleProperties = $rpTestResult.Details[$detailKey]
+
+                foreach($claimRuleProperty in $ClaimRuleProperties)
                 {
-                    if (-Not [String]::IsNullOrWhiteSpace($rpTestResult.Details[$detailKey]))
+                    #ImportFromCsv Application.ActiveWorkbook.Path & "\Attributes.csv", "AD Attributes", 1, 1
+                    #RP Name, RuleSet, ADAttribute
+                    foreach ($ADAttribute in $claimRuleProperty.ADAttributes)
                     {
-                        $aggregateDetail += $rpTestResult.TestName + "::" + $detailKey + "->" +  $rpTestResult.Details[ $detailKey].ToString().replace("`r`n",",") + "||"
+                        $AttributeReportRow =  New-Object -TypeName PSObject -Property @{
+                            "RP Name" = $ADFSRPTrust.Name
+                            RuleSet = $claimRuleProperty.RuleSet
+                            ADAttribute = $ADAttribute
+                        }
+                        $attributeReportRows += $AttributeReportRow
+                    }
+
+                    if ($claimRuleProperty.AttributeStoreName -ne "N/A")
+                    {
+                        $AttributeStoreReportRow =  New-Object -TypeName PSObject -Property @{
+                            "RP Name" = $ADFSRPTrust.Name
+                            AttributeStoreName = $claimRuleProperty.AttributeStoreName
+                        }
+                        $attributeStoreReportRows += $AttributeStoreReportRow
+                    }
+
+                    if ($claimRuleProperty.RuleSet -eq "IssuanceTransform")
+                    {
+                        foreach ($ClaimType in $claimRuleProperty.IssuanceClaimTypes)
+                        {
+                            $claimTypesReportRow =  New-Object -TypeName PSObject -Property @{
+                                "RP Name" = $ADFSRPTrust.Name
+                                "Claim Type" = $ClaimType
+                            }
+                            $claimTypesReportRows += $claimTypesReportRow
+                        }
                     }
                 }
             }
-            else
-            {
-                Write-Output $rpTestResult
-            }
         }
+    }
 
-        $reportRow | Add-Member -MemberType NoteProperty -Name "Message" -Value $aggregateMessage
-        $reportRow | Add-Member -MemberType NoteProperty -Name "Details" -Value $aggregateDetail
-        $reportRow | Add-Member -MemberType NoteProperty -Name "NotPassedTests" -Value $aggregateNotPassTests
+    $aggregateReportRow | Add-Member -MemberType NoteProperty -Name "Message" -Value $aggregateMessage
+    $aggregateReportRow | Add-Member -MemberType NoteProperty -Name "Details" -Value $aggregateDetail
+    $aggregateReportRow | Add-Member -MemberType NoteProperty -Name "NotPassedTests" -Value $aggregateNotPassTests
 
-        if ($AggregateResults)
-        {
-            Write-Output $reportRow
-        }      
+    New-Object -TypeName PSObject -Property @{
+        AggregateReportRow = $aggregateReportRow
+        AttributeReportRows = $attributeReportRows
+        AttributeStoreReportRows = $attributeStoreReportRows
+        ClaimTypeReportRows = $claimTypesReportRows
     }
 }
 
-Export-ModuleMember Export-ADFSConfiguration
-Export-ModuleMember Test-ADFSConfigAADMigration
-Export-ModuleMember Test-ADFSConfigClaimRules
+<# 
+ .Synopsis
+  Analyzes a set of Relying Party trusts and produces CSV files with the results
+
+ .Description
+  The cmdlet expects either a root folder where the RP Trusts are serialized in XML format,
+  or a CSV file that has all the RP Trust information. After executing, the following files 
+  are created in the directory from which the cmdlet ran:
+  
+  1. ADFSRPConfiguration.csv: This file has one row per RP Trust. There are individual columns
+  per each compatibility test (e.g. Test-ADFSRPAdditionalWSFedEndpoint)
+  2. Attributes.csv: This file contains the list of Active Directory Attributes found in the RP 
+  Trust rule sets. There is one row for each RP Trust/attribute found.
+  3. AttributeStores.csv: This file contains the list of Attribute Stores found in the RP Trust
+  rule sets. There is one row for each RP Trust and Attribute store found
+  4. ClaimTypes.csv: This file contains the list of Claim Types found in the RP Trust rule sets.
+  There is one row for each RP Trust and Claim Type found
+
+
+ .Parameter RPXMLFileDirectory
+  Path to a directory that contains XML files with RP Trust information. 
+  To export the CSVFiles in XML format, run the cmdlet Export-ADFS2AADOnPremConfiguration in the ADFS
+  server; then, unzip the generated ZIP file and provide "apps" subfolder to the Test-ADFS2AADOnPremRPTrustSet
+  cmdlet.
+
+ .Parameter RPCSVFilePath
+  
+ .Example 
+  Run from a root folder that has XML serialized files
+  Test-ADFS2AADOnPremRPTrustSet -RPXMLFileDirectory "C:\ADFSConfig\Apps"
+
+ .Example 
+  Run from a CSV file from the ADFS Server
+  Get-ADFSRelyingPartyTrust | ConvertTo-Csv -NoTypeInformation | Out-File "C:\ADFSConfig\OnPremRPs.csv"
+  Test-ADFS2AADOnPremRPTrustSet -RPCSVFilePath "C:\ADFSConfig\OnPremRPs.csv" 
+#>
+
+Function Test-ADFS2AADOnPremRPTrustSet
+{
+    [CmdletBinding()]
+    param
+    (    
+        [Parameter(Mandatory=$true, ParameterSetName="RPXMLFileDirectory")]
+        [String]
+        $RPXMLFileDirectory,
+
+        [Parameter(Mandatory=$true, ParameterSetName="RPCSVFilePath")]
+        [String]
+        $RPCSVFilePath
+    )
+
+    $trustSetTestOutput = @()
+
+    if ( $PSCmdlet.ParameterSetName -eq "RPXMLFileDirectory" )
+    {
+        $fileEntries = [IO.Directory]::GetFiles($RPXMLFileDirectory);
+        $totalRPs = $fileEntries.Count
+        $rpCount = 0
+    
+    
+        foreach($fileName in $fileEntries) 
+        {
+            $rpCount++
+            $percent = 100 * $rpCount / $totalRPs
+            
+            
+            $ADFSRPTrust = Import-clixml $fileName
+            $RPTrustName = $ADFSRPTrust.Name 
+            
+            Write-Progress -Activity "Analyzing Relying Parties" -Status "Processing $RPTrustName" -PercentComplete $percent -Id 1
+            $rpTestResults  = Test-ADFS2AADOnPremRPTrust -ADFSRPTrust $ADFSRPTrust
+
+            $trustSetTestOutput += $rpTestResults
+        }
+    } elseif ( $PSCmdlet.ParameterSetName -eq "RPCSVFilePath" ) 
+    {
+        $RPTrusts = Get-Content -Path $RPCSVFilePath -Raw | ConvertFrom-Csv
+
+        $totalRPs = $RPTrusts.Count
+        $rpCount = 0
+    
+    
+        foreach($ADFSRPTrust in $RPTrusts) 
+        {
+            $rpCount++
+            $percent = 100 * $rpCount / $totalRPs
+
+            $RPTrustName = $ADFSRPTrust.Name
+            Write-Progress -Activity "Analyzing Relying Parties" -Status "Processing app $RPTrustName" -PercentComplete $percent -Id 1
+            $rpTestResults  = Test-ADFS2AADOnPremRPTrust -ADFSRPTrust $ADFSRPTrust 
+            $trustSetTestOutput +=  $rpTestResults
+        }
+    }
+    else
+    {
+        throw "Invalid input"
+    }
+
+    #Serialize the reports in different files
+    #TODO: Dedup??
+    $trustSetTestOutput | Select-Object -ExpandProperty "AggregateReportRow" | ConvertTo-Csv -NoTypeInformation | Out-File ".\ADFSRPConfiguration.csv"
+    $trustSetTestOutput | Select-Object -ExpandProperty "AttributeReportRows"  | ConvertTo-Csv -NoTypeInformation | Out-File ".\Attributes.csv"
+    $trustSetTestOutput | Select-Object -ExpandProperty "AttributeStoreReportRows"   | ConvertTo-Csv -NoTypeInformation | Out-File ".\AttributeStores.csv"
+    $trustSetTestOutput | Select-Object -ExpandProperty "ClaimTypeReportRows" | ConvertTo-Csv -NoTypeInformation | Out-File ".\ClaimTypes.csv"
+}
+
+<# 
+ .Synopsis
+  Exports the configuration of Relying Party Trusts and Claims Provider Trusts
+
+ .Description
+  Creates and zips a set of files that hold the configuration of AD FS claim providers and relying parties.
+  The output files are created under a directory called "ADFS" in the system drive.
+ 
+
+ .Example
+  Export-ADFS2AADOnPremConfiguration
+#>
+Function Export-ADFS2AADOnPremConfiguration
+{
+    $filePathBase = "$env:systemdrive\ADFS\apps\"
+    $zipfileBase = "$env:systemdrive\ADFS\zip\"
+    $zipfileName = $zipfileBase + "ADFSApps.zip"
+    mkdir $filePathBase -ErrorAction SilentlyContinue
+    mkdir $zipfileBase -ErrorAction SilentlyContinue
+
+    $AdfsRelyingPartyTrusts = Get-AdfsRelyingPartyTrust
+    foreach ($AdfsRelyingPartyTrust in $AdfsRelyingPartyTrusts)
+    {
+        $RPfileName = $AdfsRelyingPartyTrust.Name.ToString()
+        $CleanedRPFileName = Remove-InvalidFileNameChars -Name $RPfileName
+        $RPName = "RPT - " + $CleanedRPFileName
+        $filePath = $filePathBase + $RPName + '.xml'
+        $AdfsRelyingPartyTrust | Export-Clixml $filePath -ErrorAction SilentlyContinue
+    }
+
+    $AdfsClaimsProviderTrusts = Get-AdfsClaimsProviderTrust
+    foreach ($AdfsClaimsProviderTrust in $AdfsClaimsProviderTrusts)
+    {
+ 
+        $CPfileName = $AdfsClaimsProviderTrust.Name.ToString()
+        $CleanedCPFileName = Remove-InvalidFileNameChars -Name $CPfileName
+        $CPTName = "CPT - " + $CleanedCPFileName
+        $filePath = $filePathBase + $CPTName + '.xml'
+        $AdfsClaimsProviderTrust | Export-Clixml $filePath -ErrorAction SilentlyContinue
+ 
+    } 
+
+    If (Test-Path $zipfileName)
+    {
+        Remove-Item $zipfileName
+    }
+
+    Add-Type -assembly "system.io.compression.filesystem"
+    [io.compression.zipfile]::CreateFromDirectory($filePathBase, $zipfileName)
+    
+    invoke-item $zipfileBase
+}
+
+Export-ModuleMember Export-ADFS2AADOnPremConfiguration
+Export-ModuleMember Test-ADFS2AADOnPremRPTrust
+Export-ModuleMember Test-ADFS2AADOnPremRPTrustSet
