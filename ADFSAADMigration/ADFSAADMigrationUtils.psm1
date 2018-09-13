@@ -257,16 +257,16 @@ Function Invoke-ADFSClaimRuleAnalysis
         if ($AttributeStoreRuleMatch.Success)
         {
             $AttributeStoreName = $AttributeStoreRuleMatch.Groups[1].ToString()
-            $AttributeStoreRuleTypesRegex = '(?i)types\s*=\s*\("(.*)"\)'
+            $AttributeStoreRuleTypesRegex = '(?i)types\s*=\s*\("(.*?)"\)'
             $AttributeStoreRuleTypesMatch = [Regex]::Match($issuanceStatement, $AttributeStoreRuleTypesRegex)
             
             if ($AttributeStoreRuleTypesMatch.Success)
             {
-                $IssuanceClaimTypes += $AttributeStoreRuleTypesMatch.Groups[1].ToString().Split(',');
+                $IssuanceClaimTypes += $AttributeStoreRuleTypesMatch.Groups[1].ToString().Split(',').Trim().Trim('"');
             }
 
             #Task 4b: Extract the attributes retrieved from the store
-            $AttributeStoreQueryRegex = '(?i)query\s*=\s*"(.*)"'
+            $AttributeStoreQueryRegex = '(?i)query\s*=\s*"(.*?)"'
             $AttributeStoreQueryMatch = [Regex]::Match($issuanceStatement, $AttributeStoreQueryRegex)
             
             if ($AttributeStoreQueryMatch.Success)
@@ -277,7 +277,6 @@ Function Invoke-ADFSClaimRuleAnalysis
                     $AttributeStoreQuerySplit = $AttributeStoreQuery.Split(';');
                     $ActiveDirectoryAttributes = $AttributeStoreQuerySplit[1];
                     $ActiveDirectoryAttributesSplit = $ActiveDirectoryAttributes.Split(',')
-
                 }
             }
         }
@@ -775,7 +774,7 @@ Function Invoke-TestFunctions([array]$functionsToRun, $ADFSRelyingPartyTrust)
  
  .Example 
   Run the test from the ADFS Federation Server:
-  Get-AdfsRelyingPartyTrust -Identifier urn:myCRMApp | Test-ADFS2AADOnPremRPTrust  
+  Get-AdfsRelyingPartyTrust -Identifier urn:myCRMApp | Test-ADFS2AADOnPremRPTrust 
 #> 
 
 
@@ -1009,10 +1008,10 @@ Function Test-ADFS2AADOnPremRPTrustSet
 
     #Serialize the reports in different files
     #TODO: Dedup??
-    $trustSetTestOutput | Select-Object -ExpandProperty "AggregateReportRow" | ConvertTo-Csv -NoTypeInformation | Out-File ".\ADFSRPConfiguration.csv"
-    $trustSetTestOutput | Select-Object -ExpandProperty "AttributeReportRows"  | ConvertTo-Csv -NoTypeInformation | Out-File ".\Attributes.csv"
-    $trustSetTestOutput | Select-Object -ExpandProperty "AttributeStoreReportRows"   | ConvertTo-Csv -NoTypeInformation | Out-File ".\AttributeStores.csv"
-    $trustSetTestOutput | Select-Object -ExpandProperty "ClaimTypeReportRows" | ConvertTo-Csv -NoTypeInformation | Out-File ".\ClaimTypes.csv"
+    $trustSetTestOutput | Select-Object -ExpandProperty "AggregateReportRow" | Select-Object -Unique * | ConvertTo-Csv -NoTypeInformation | Out-File ".\ADFSRPConfiguration.csv"
+    $trustSetTestOutput | Select-Object -ExpandProperty "AttributeReportRows" | Select-Object -Unique * | ConvertTo-Csv -NoTypeInformation | Out-File ".\Attributes.csv"
+    $trustSetTestOutput | Select-Object -ExpandProperty "AttributeStoreReportRows" | Select-Object -Unique *   | ConvertTo-Csv -NoTypeInformation | Out-File ".\AttributeStores.csv"
+    $trustSetTestOutput | Select-Object -ExpandProperty "ClaimTypeReportRows" | Select-Object -Unique * | ConvertTo-Csv -NoTypeInformation | Out-File ".\ClaimTypes.csv"
 }
 
 <# 
