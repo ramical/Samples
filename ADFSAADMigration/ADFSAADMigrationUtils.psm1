@@ -429,7 +429,7 @@ Function Test-ADFSRPAdditionalWSFedEndpoint
 
     $TestResult = New-Object MigrationTestResult
 
-    if ($ADFSRelyingPartyTrust.AdditionalWSFedEndpoint.Count -gt 0)
+    if ($ADFSRelyingPartyTrust.AdditionalWSFedEndpoint.Count -gt 0) #TODO: CSV key to be empty would be "[]"
     {
         $TestResult.Result = [ResultType]::Fail
         $TestResult.Message = "Relying Party has additional WS-Federation Endpoints."
@@ -456,7 +456,7 @@ Function Test-ADFSRPAllowedAuthenticationClassReferences
 
     $TestResult = New-Object MigrationTestResult
 
-    if ($ADFSRelyingPartyTrust.AllowedAuthenticationClassReferences.Count -gt 0)
+    if ($ADFSRelyingPartyTrust.AllowedAuthenticationClassReferences.Count -gt 0) #For csv, the value from kusto is "[]"
     {
         $TestResult.Result = [ResultType]::Fail
         $TestResult.Message = "Relying Party has set AllowedAuthenticationClassReferences."
@@ -483,7 +483,7 @@ Function Test-ADFSRPAlwaysRequireAuthentication
 
     $TestResult = New-Object MigrationTestResult
 
-    if ($ADFSRelyingPartyTrust.AlwaysRequireAuthentication)
+    if ($ADFSRelyingPartyTrust.AlwaysRequireAuthentication) #CSV: false comes as string "0"
     {
         $TestResult.Result = [ResultType]::Fail
         $TestResult.Message = "Relying Party has AlwaysRequireAuthentication enabled"        
@@ -509,7 +509,7 @@ Function Test-ADFSRPAutoUpdateEnabled
 
     $TestResult = New-Object MigrationTestResult
 
-    if ($ADFSRelyingPartyTrust.AutoUpdateEnabled)
+    if ($ADFSRelyingPartyTrust.AutoUpdateEnabled) #CSV: False is string "0"
     {
         $TestResult.Result = [ResultType]::Warning
         $TestResult.Message = "Relying Party has AutoUpdateEnabled set to true"
@@ -534,10 +534,11 @@ Function Test-ADFSRPClaimsProviderName
         $ADFSRelyingPartyTrust
     )
 
+
     $TestResult = New-Object MigrationTestResult
     $TestResult.Details.Add("ClaimsProviderName.Count", $ADFSRelyingPartyTrust.ClaimsProviderName.Count)
-
-    if ($ADFSRelyingPartyTrust.ClaimsProviderName.Count -gt 1)
+     
+    if ($ADFSRelyingPartyTrust.ClaimsProviderName.Count -gt 1) #CSV: Kusto comes with a array syntax
     {
         $TestResult.Result = [ResultType]::Fail
         $TestResult.Message = "Relying Party has multiple ClaimsProviders enabled"        
@@ -568,6 +569,8 @@ Function Test-ADFSRPEncryptClaims
 
     $TestResult = New-Object MigrationTestResult
 
+    #CSV: "0" string is false
+
     if (($ADFSRelyingPartyTrust.EncryptClaims -or $ADFSRelyingPartyTrust.EncryptedNameIdRequired) -and $ADFSRelyingPartyTrust.EncryptionCertificate -ne $null)
     {
         $TestResult.Result = [ResultType]::Fail
@@ -596,7 +599,7 @@ Function Test-ADFSRPMonitoringEnabled
 
     $TestResult = New-Object MigrationTestResult
 
-    if ($ADFSRelyingPartyTrust.MonitoringEnabled)
+    if ($ADFSRelyingPartyTrust.MonitoringEnabled) #CSV: boolean syntax
     {
         $TestResult.Result = [ResultType]::Warning
         $TestResult.Message = "Relying Party has MonitoringEnabled set to true"
@@ -623,7 +626,7 @@ Function Test-ADFSRPNotBeforeSkew
 
     $TestResult = New-Object MigrationTestResult
 
-    if ($ADFSRelyingPartyTrust.NotBeforeSkew -gt 0)
+    if ($ADFSRelyingPartyTrust.NotBeforeSkew -gt 0) #CSV: Int Syntax
     {
         $TestResult.Result = [ResultType]::Warning
         $TestResult.Message = "Relying Party has NotBeforeSkew configured"
@@ -650,7 +653,7 @@ Function Test-ADFSRPRequestMFAFromClaimsProviders
 
     $TestResult = New-Object MigrationTestResult
 
-    if ($ADFSRelyingPartyTrust.RequestMFAFromClaimsProviders)
+    if ($ADFSRelyingPartyTrust.RequestMFAFromClaimsProviders) #CSV: Boolean syntax
     {
         $TestResult.Result = [ResultType]::Warning
         $TestResult.Message = "Relying Party has RequestMFAFromClaimsProviders set to true"
@@ -677,7 +680,7 @@ Function Test-ADFSRPSignedSamlRequestsRequired
 
     $TestResult = New-Object MigrationTestResult
 
-    if ($ADFSRelyingPartyTrust.SignedSamlRequestsRequired)
+    if ($ADFSRelyingPartyTrust.SignedSamlRequestsRequired) #CSV: Boolean syntax
     {
         $TestResult.Result = [ResultType]::Fail
         $TestResult.Message = "Relying Party has SignedSamlRequestsRequired set to true"
@@ -704,7 +707,7 @@ Function Test-ADFSRPTokenLifetime
 
     $TestResult = New-Object MigrationTestResult
 
-    if ($ADFSRelyingPartyTrust.TokenLifetime -gt 0 -and $ADFSRelyingPartyTrust.TokenLifetime -lt 10)
+    if ($ADFSRelyingPartyTrust.TokenLifetime -gt 0 -and $ADFSRelyingPartyTrust.TokenLifetime -lt 10) #CSV: Int Syntax
     {
         $TestResult.Result = [ResultType]::Fail
         $TestResult.Message = "TokenLifetime is set to less than 10 minutes"
@@ -834,7 +837,7 @@ Function Test-ADFS2AADOnPremRPTrust
             $aggregateNotPassTests += $rpTestResult.TestName + "(Fail);" 
         }
 
-        if ($rpTestResult.Result -eq [ResultType]::Warning -and $reportRow.Result -ne [ResultType]::Fail)
+        if ($rpTestResult.Result -eq [ResultType]::Warning -and $aggregateReportRow.Result -ne [ResultType]::Fail)
         {
             $aggregateReportRow.Result = [ResultType]::Warning
             $aggregateNotPassTests += $rpTestResult.TestName + "(Warning);"
@@ -865,6 +868,7 @@ Function Test-ADFS2AADOnPremRPTrust
                     {
                         $AttributeReportRow =  New-Object -TypeName PSObject -Property @{
                             "RP Name" = $ADFSRPTrust.Name
+                            "Rule" = $claimRuleProperty.Rule
                             RuleSet = $claimRuleProperty.RuleSet
                             ADAttribute = $ADAttribute
                         }
@@ -875,6 +879,7 @@ Function Test-ADFS2AADOnPremRPTrust
                     {
                         $AttributeStoreReportRow =  New-Object -TypeName PSObject -Property @{
                             "RP Name" = $ADFSRPTrust.Name
+                            "Rule" = $claimRuleProperty.Rule
                             AttributeStoreName = $claimRuleProperty.AttributeStoreName
                         }
                         $attributeStoreReportRows += $AttributeStoreReportRow
@@ -886,6 +891,7 @@ Function Test-ADFS2AADOnPremRPTrust
                         {
                             $claimTypesReportRow =  New-Object -TypeName PSObject -Property @{
                                 "RP Name" = $ADFSRPTrust.Name
+                                "Rule" = $claimRuleProperty.Rule
                                 "Claim Type" = $ClaimType
                             }
                             $claimTypesReportRows += $claimTypesReportRow
@@ -1008,10 +1014,10 @@ Function Test-ADFS2AADOnPremRPTrustSet
 
     #Serialize the reports in different files
     #TODO: Dedup??
-    $trustSetTestOutput | Select-Object -ExpandProperty "AggregateReportRow" | Select-Object -Unique * | ConvertTo-Csv -NoTypeInformation | Out-File ".\ADFSRPConfiguration.csv"
-    $trustSetTestOutput | Select-Object -ExpandProperty "AttributeReportRows" | Select-Object -Unique * | ConvertTo-Csv -NoTypeInformation | Out-File ".\Attributes.csv"
-    $trustSetTestOutput | Select-Object -ExpandProperty "AttributeStoreReportRows" | Select-Object -Unique *   | ConvertTo-Csv -NoTypeInformation | Out-File ".\AttributeStores.csv"
-    $trustSetTestOutput | Select-Object -ExpandProperty "ClaimTypeReportRows" | Select-Object -Unique * | ConvertTo-Csv -NoTypeInformation | Out-File ".\ClaimTypes.csv"
+    $trustSetTestOutput | Select-Object -ExpandProperty "AggregateReportRow" | ConvertTo-Csv -NoTypeInformation | Out-File ".\ADFSRPConfiguration.csv"
+    $trustSetTestOutput | Select-Object -ExpandProperty "AttributeReportRows" | Select-Object -Property "RP Name","RuleSet","Rule", "ADAttribute" -Unique | ConvertTo-Csv -NoTypeInformation | Out-File ".\Attributes.csv"
+    $trustSetTestOutput | Select-Object -ExpandProperty "AttributeStoreReportRows" | Select-Object -Property "RP Name","Rule", "AttributeStoreName" -Unique    | ConvertTo-Csv -NoTypeInformation | Out-File ".\AttributeStores.csv"
+    $trustSetTestOutput | Select-Object -ExpandProperty "ClaimTypeReportRows" | Select-Object -Property "RP Name","Rule", "Claim Type" -Unique | ConvertTo-Csv -NoTypeInformation | Out-File ".\ClaimTypes.csv"
 }
 
 <# 
@@ -1070,3 +1076,4 @@ Function Export-ADFS2AADOnPremConfiguration
 Export-ModuleMember Export-ADFS2AADOnPremConfiguration
 Export-ModuleMember Test-ADFS2AADOnPremRPTrust
 Export-ModuleMember Test-ADFS2AADOnPremRPTrustSet
+
