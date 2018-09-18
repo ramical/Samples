@@ -317,6 +317,7 @@ Function Test-ADFSRPRuleset
     $TestResult.Details.Add("ClaimRuleProperties", $RuleAnalysisResult)
 
     #Insight 1: Did we find claim rules that don't match any template
+
     $UnknownClaimRulePatternFound = ($RuleAnalysisResult | where {$_.IsKnownRuleMigratablePattern -eq $false}).Count -gt 0
     $TestResult.Details.Add("UnkwnownPatternFound", $UnknownClaimRulePatternFound)
 
@@ -814,7 +815,7 @@ Function Test-ADFS2AADOnPremRPTrust
     $attributeReportRows = @()
     $attributeStoreReportRows = @()
     $claimTypesReportRows = @()
-
+    $RuleDetailReportRows = @()
 
     #now, assemble the result object
     $aggregateReportRow= New-Object -TypeName PSObject
@@ -862,6 +863,17 @@ Function Test-ADFS2AADOnPremRPTrust
 
                 foreach($claimRuleProperty in $ClaimRuleProperties)
                 {
+                    $RuleDetailReportRow =  New-Object -TypeName PSObject -Property @{
+                            "RP Name" = $ADFSRPTrust.Name
+                            "Rule" = $claimRuleProperty.Rule
+                            RuleSet = $claimRuleProperty.RuleSet
+                            IsKnownRuleMigratablePattern = $claimRuleProperty.IsKnownRuleMigratablePattern
+                            KnownRulePatternName = $claimRuleProperty.KnownRulePatternName
+                    }
+
+                    $RuleDetailReportRows += $RuleDetailReportRow
+                    
+                
                     #ImportFromCsv Application.ActiveWorkbook.Path & "\Attributes.csv", "AD Attributes", 1, 1
                     #RP Name, RuleSet, ADAttribute
                     foreach ($ADAttribute in $claimRuleProperty.ADAttributes)
@@ -906,11 +918,13 @@ Function Test-ADFS2AADOnPremRPTrust
     $aggregateReportRow | Add-Member -MemberType NoteProperty -Name "Details" -Value $aggregateDetail
     $aggregateReportRow | Add-Member -MemberType NoteProperty -Name "NotPassedTests" -Value $aggregateNotPassTests
 
+
     New-Object -TypeName PSObject -Property @{
         AggregateReportRow = $aggregateReportRow
         AttributeReportRows = $attributeReportRows
         AttributeStoreReportRows = $attributeStoreReportRows
         ClaimTypeReportRows = $claimTypesReportRows
+        RuleDetailReportRows = $RuleDetailReportRows
     }
 }
 
@@ -1018,6 +1032,8 @@ Function Test-ADFS2AADOnPremRPTrustSet
     $trustSetTestOutput | Select-Object -ExpandProperty "AttributeReportRows" | Select-Object -Property "RP Name","RuleSet","Rule", "ADAttribute" -Unique | ConvertTo-Csv -NoTypeInformation | Out-File ".\Attributes.csv"
     $trustSetTestOutput | Select-Object -ExpandProperty "AttributeStoreReportRows" | Select-Object -Property "RP Name","Rule", "AttributeStoreName" -Unique    | ConvertTo-Csv -NoTypeInformation | Out-File ".\AttributeStores.csv"
     $trustSetTestOutput | Select-Object -ExpandProperty "ClaimTypeReportRows" | Select-Object -Property "RP Name","Rule", "Claim Type" -Unique | ConvertTo-Csv -NoTypeInformation | Out-File ".\ClaimTypes.csv"
+    $trustSetTestOutput | Select-Object -ExpandProperty "RuleDetailReportRows" | Select-Object -Property "RP Name","RuleSet","Rule", "IsKnownRuleMigratablePattern", "KnownRulePatternName" -Unique | ConvertTo-Csv -NoTypeInformation | Out-File ".\RuleDetails.csv"
+    
 }
 
 <# 
