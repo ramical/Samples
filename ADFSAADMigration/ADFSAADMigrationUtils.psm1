@@ -318,7 +318,7 @@ Function Test-ADFSRPRuleset
 
     #Insight 1: Did we find claim rules that don't match any template
 
-    $UnknownClaimRulePatternFound = ($RuleAnalysisResult | where {$_.IsKnownRuleMigratablePattern -eq $false}).Count -gt 0
+    $UnknownClaimRulePatternFound = @($RuleAnalysisResult | where {$_.IsKnownRuleMigratablePattern -eq $false}).Count -gt 0
     $TestResult.Details.Add("UnkwnownPatternFound", $UnknownClaimRulePatternFound)
 
     if ($UnknownClaimRulePatternFound)
