@@ -108,7 +108,7 @@ function Get-MSCloudIdPasswordWritebackAgentLog
 #>
 function Get-MSCloudIdNotificationEmailAddresses
 {
-    $technicalNotificationEmail = Get-MSOLCompanyInformation | Select -ExpandProperty TechnicalNotificationEmails
+    $technicalNotificationEmail = Get-MSOLCompanyInformation | Select-Object -ExpandProperty TechnicalNotificationEmails
     $result = New-Object -TypeName psobject -Property @{ NotificationEmailScope = "Tenant"; NotificationType = "Technical Notification"; RecipientName = "N/A";  EmailAddress = $technicalNotificationEmail; ; RoleMemberObjectType = "email address"; RoleMemberAlternateEmail = "N/A" }
 
     Write-Output $result
@@ -279,17 +279,6 @@ Function Get-MSCloudIdApplicationKeyExpirationReport
 .SYNOPSIS
     Lists delegated permissions (OAuth2PermissionGrants) and application permissions (AppRoleAssignments).
 
-.PARAMETER DelegatedPermissions
-    If set, will return delegated permissions. If neither this switch nor the ApplicationPermissions switch is set,
-    both application and delegated permissions will be returned.
-
-.PARAMETER ApplicationPermissions
-    If set, will return application permissions. If neither this switch nor the DelegatedPermissions switch is set,
-    both application and delegated permissions will be returned.
-
-.PARAMETER ShowProgress
-    Whether or not to display a progress bar when retrieving application permissions (which could take some time).
-
 .PARAMETER PrecacheSize
     The number of users to pre-load into a cache. For tenants with over a thousand users,
     increasing this may improve performance of the script.
@@ -304,79 +293,68 @@ Function Get-MSCloudIdApplicationKeyExpirationReport
 #>
 Function Get-MSCloudIdConsentGrantList
 {
-[CmdletBinding()]
-param(
-    [switch] $DelegatedPermissions,
+    [CmdletBinding()]
+    param(
+        [int] $PrecacheSize = 999
+    )
+    # An in-memory cache of objects by {object ID} andy by {object class, object ID} 
+    $script:ObjectByObjectId = @{}
+    $script:ObjectByObjectClassId = @{}
 
-    [switch] $ApplicationPermissions,
-
-    [switch] $ShowProgress,
-
-    [int] $PrecacheSize = 999
-)
-
-# Get tenant details to test that Connect-AzureAD has been called
-try {
-    $tenant_details = Get-AzureADTenantDetail
-} catch {
-    throw "You must call Connect-AzureAD before running this script."
-}
-Write-Verbose ("TenantId: {0}, InitialDomain: {1}" -f `
-                $tenant_details.ObjectId, `
-                ($tenant_details.VerifiedDomains | Where-Object { $_.Initial }).Name)
-
-# An in-memory cache of objects by {object ID} andy by {object class, object ID} 
-$script:ObjectByObjectId = @{}
-$script:ObjectByObjectClassId = @{}
-
-# Function to add an object to the cache
-function CacheObject($Object) {
-    if ($Object) {
-        if (-not $script:ObjectByObjectClassId.ContainsKey($Object.ObjectType)) {
-            $script:ObjectByObjectClassId[$Object.ObjectType] = @{}
-        }
-        $script:ObjectByObjectClassId[$Object.ObjectType][$Object.ObjectId] = $Object
-        $script:ObjectByObjectId[$Object.ObjectId] = $Object
-    }
-}
-
-# Function to retrieve an object from the cache (if it's there), or from Azure AD (if not).
-function GetObjectByObjectId($ObjectId) {
-    if (-not $script:ObjectByObjectId.ContainsKey($ObjectId)) {
-        Write-Verbose ("Querying Azure AD for object '{0}'" -f $ObjectId)
-        try {
-            $object = Get-AzureADObjectByObjectId -ObjectId $ObjectId
-            CacheObject -Object $object
-        } catch { 
-            Write-Verbose "Object not found."
+    # Function to add an object to the cache
+    function CacheObject($Object) {
+        if ($Object) {
+            if (-not $script:ObjectByObjectClassId.ContainsKey($Object.ObjectType)) {
+                $script:ObjectByObjectClassId[$Object.ObjectType] = @{}
+            }
+            $script:ObjectByObjectClassId[$Object.ObjectType][$Object.ObjectId] = $Object
+            $script:ObjectByObjectId[$Object.ObjectId] = $Object
         }
     }
-    return $script:ObjectByObjectId[$ObjectId]
-}
 
-# Get all ServicePrincipal objects and add to the cache
-Write-Verbose "Retrieving ServicePrincipal objects..."
-Get-AzureADServicePrincipal -All $true | Where-Object {
-    CacheObject -Object $_
-}
+    # Function to retrieve an object from the cache (if it's there), or from Azure AD (if not).
+    function GetObjectByObjectId($ObjectId) {
+        if (-not $script:ObjectByObjectId.ContainsKey($ObjectId)) {
+            Write-Verbose ("Querying Azure AD for object '{0}'" -f $ObjectId)
+            try {
+                $object = Get-AzureADObjectByObjectId -ObjectId $ObjectId
+                CacheObject -Object $object
+            } catch { 
+                Write-Verbose "Object not found."
+            }
+        }
+        return $script:ObjectByObjectId[$ObjectId]
+    }
+   
+    # Get all ServicePrincipal objects and add to the cache
+    Write-Verbose "Retrieving ServicePrincipal objects..."
+    $servicePrincipals = Get-AzureADServicePrincipal -All $true 
 
-if ($DelegatedPermissions -or (-not ($DelegatedPermissions -or $ApplicationPermissions))) {
+    #there is a limitation on how Azure AD Graph retrieves the list of OAuth2PermissionGrants
+    #we have to traverse all service principals and gather them separately.
+    # Originally, we could have done this 
+    # $Oauth2PermGrants = Get-AzureADOAuth2PermissionGrant -All $true 
+    
+    $Oauth2PermGrants = @()
+
+    foreach ($sp in $servicePrincipals)
+    {
+        CacheObject -Object $sp
+        $spPermGrants = Get-AzureADServicePrincipalOAuth2PermissionGrant -ObjectId $sp.ObjectId -All $true
+        $Oauth2PermGrants += $spPermGrants
+    }  
 
     # Get one page of User objects and add to the cache
     Write-Verbose "Retrieving User objects..."
-    Get-AzureADUser -Top $PrecacheSize | Where-Object {
-        CacheObject -Object $_
-    }
+    Get-AzureADUser -Top $PrecacheSize | ForEach-Object { CacheObject -Object $_ }
 
     # Get all existing OAuth2 permission grants, get the client, resource and scope details
-    Write-Verbose "Retrieving OAuth2PermissionGrants..."
-    Get-AzureADOAuth2PermissionGrant -All $true | ForEach-Object {
-        $grant = $_
-        if ($grant.Scope) {
-            $grant.Scope.Split(" ") | Where-Object { $_ } | ForEach-Object {
-                
+    foreach ($grant in $Oauth2PermGrants)
+    {
+        if ($grant.Scope) 
+        {
+            $grant.Scope.Split(" ") | Where-Object { $_ } | ForEach-Object {               
                 $scope = $_
-
                 $client = GetObjectByObjectId -ObjectId $grant.ClientId
                 $resource = GetObjectByObjectId -ObjectId $grant.ResourceId
                 $principalDisplayName = ""
@@ -402,28 +380,18 @@ if ($DelegatedPermissions -or (-not ($DelegatedPermissions -or $ApplicationPermi
             }
         }
     }
-}
-
-if ($ApplicationPermissions -or (-not ($DelegatedPermissions -or $ApplicationPermissions))) {
-
+    
     # Iterate over all ServicePrincipal objects and get app permissions
     Write-Verbose "Retrieving AppRoleAssignments..."
-    $servicePrincipalCount = $script:ObjectByObjectClassId['ServicePrincipal'].Count
-    $script:ObjectByObjectClassId['ServicePrincipal'].GetEnumerator() | ForEach-Object { $i = 0 } {
-        
-        if ($ShowProgress) {
-            Write-Progress -Activity "Retrieving application permissions..." `
-                        -Status ("Checked {0}/{1} apps" -f $i++, $servicePrincipalCount) `
-                        -PercentComplete (($i / $servicePrincipalCount) * 100)
-        }
+    $script:ObjectByObjectClassId['ServicePrincipal'].GetEnumerator() | ForEach-Object {
+        $sp = $_.Value
 
-        $client = $_.Value
-        
-        Get-AzureADServiceAppRoleAssignedTo -ObjectId $client.ObjectId -All $true `
+        Get-AzureADServiceAppRoleAssignedTo -ObjectId $sp.ObjectId  -All $true `
         | Where-Object { $_.PrincipalType -eq "ServicePrincipal" } | ForEach-Object {
             $assignment = $_
-
-            $resource = GetObjectByObjectId -ObjectId $assignment.ResourceId
+            
+            $client = GetObjectByObjectId -ObjectId $assignment.PrincipalId
+            $resource = GetObjectByObjectId -ObjectId $assignment.ResourceId            
             $appRole = $resource.AppRoles | Where-Object { $_.Id -eq $assignment.Id }
 
             New-Object PSObject -Property ([ordered]@{
@@ -439,7 +407,6 @@ if ($ApplicationPermissions -or (-not ($DelegatedPermissions -or $ApplicationPer
         }
     }
 }
-}
 
 <# 
  .Synopsis
@@ -453,7 +420,7 @@ if ($ApplicationPermissions -or (-not ($DelegatedPermissions -or $ApplicationPer
 #>
 function Get-MSCloudIdADFSEndpoints
 {
-	Get-AdfsEndpoint | where {$_.Enabled -eq "True"} 
+	Get-AdfsEndpoint | Where-Object {$_.Enabled -eq "True"} 
 }
 
 
