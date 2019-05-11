@@ -493,6 +493,216 @@ Function Export-MSCloudIdADFSConfiguration
     invoke-item $zipfileBase
 }
 
+function Get-MSCloudIdGroupBasedLicensingReport {
+    [CmdletBinding()]
+    param(
+    )
+
+    #Source : https://docs.microsoft.com/en-us/azure/active-directory/users-groups-roles/licensing-ps-examples
+
+    $groupsWithLicensingErrors = Get-MsolGroup -HasLicenseErrorsOnly $true
+
+    $groupWithLicenses = Get-MsolGroup -All | Where-Object {$_.Licenses}  
+    
+    foreach($groupWithLicense in $groupWithLicenses) 
+    {
+        $groupId = $groupWithLicense.ObjectId;
+        $groupName = $groupWithLicense.DisplayName;
+        $groupLicenses = $groupWithLicense.Licenses | Select-Object -ExpandProperty SkuPartNumber
+
+        
+
+        $licensingError = $groupsWithLicensingErrors | where {$_.ObjectId -eq $groupId} 
+
+        $licensingErrorFlag = @($licensingError).Count -gt 0
+
+    
+        #aggregate results for this group
+        foreach ($groupLicense in $groupLicenses)
+        {
+            New-Object Object |
+                            Add-Member -NotePropertyName GroupName -NotePropertyValue $groupName -PassThru |
+                            Add-Member -NotePropertyName GroupId -NotePropertyValue $groupId -PassThru |
+                            Add-Member -NotePropertyName GroupLicense -NotePropertyValue $groupLicense -PassThru |
+                            Add-Member -NotePropertyName LicensingErrors -NotePropertyValue $licensingErrorFlag -PassThru
+            }
+        }
+}
+
+<# 
+ .Synopsis
+  Produces the Azure AD Connect Config Documenter report
+
+ .Description
+  This cmdlet downloads and executes the Azure AD Config Documenter tool against supplied input files, and returns the 
+  full path of the HTML report to the powershell pipeline.
+  This cmdlet also will create subdirectories and files under the root output directory supplied as a parameter.
+
+  .PARAMETER AADConnectProdConfigZipFilePath
+    Full path of the ZIP file that from the Azure AD Connect environment in production
+
+  .PARAMETER AADConnectProdStagingZipFilePath
+    Full path of the ZIP file that from the Azure AD Connect environment in staging
+
+  .PARAMETER OutputRootPath
+    Full path of an output directory where the tool will be downloaded, and ZIP files will be expanded. 
+    This cmdlet will NOT clean up the files there. 
+
+   .PARAMETER CustomerName
+    String lable that identifies the customer. This is used to create folder names and report filenames.
+
+    .EXAMPLE
+    .\Expand-MsCloudIdAADConnectConfig -AADConnectProdConfigZipFilePath "c:\temp\contoso\prod.zip" ` 
+                                        -AADConnectProdStagingZipFilePath "c:\temp\contoso\staging.zip" `
+                                        -OutputRootPath "c:\temp\contoso"`
+                                        -CustomerName "contoso"
+    
+    This command will return a string with full path of the report "C:\Temp\Contoso\Report\Contoso_Production_AppliedTo_Contoso_Staging_AADConnectSync_report.html"
+
+    .EXAMPLE
+    .\Expand-MsCloudIdAADConnectConfig -AADConnectProdConfigZipFilePath "c:\temp\contoso\prod.zip" ` 
+                                        -OutputRootPath "c:\temp\contoso" `
+                                        -CustomerName "contoso"
+    
+    This command will return a string with full path of the report "C:\Temp\Contoso\Report\Contoso_Production_AppliedTo_Contoso_Production_AADConnectSync_report.html"
+
+
+#>
+Function Expand-MsCloudIdAADConnectConfig
+{
+    param(
+    [Parameter(Mandatory=$true)]
+    [String]$AADConnectProdConfigZipFilePath,
+    [Parameter(Mandatory=$false)]
+    [String]$AADConnectProdStagingZipFilePath,
+    [Parameter(Mandatory=$true)]
+    [String]$OutputRootPath,
+    [Parameter(Mandatory=$true)]
+    [String]$CustomerName
+  )
+    
+    #Step 1: Create SubFolder
+    $WorkingPath = mkdir -Path $OutputRootPath -Name $CustomerName
+
+    #Step 2: Download the AAD Config Documenter
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $ConfigToolPath = Join-Path $WorkingPath.FullName  "AzureADConnectSyncDocumenter.zip"
+
+    Invoke-WebRequest -Uri "https://aka.ms/aadcfgdocumenter/release" -OutFile $ConfigToolPath
+
+    Expand-Archive -Path $ConfigToolPath -DestinationPath $WorkingPath.FullName
+
+    #Step 3: Expand input files 
+    $ConfigToolDataPath = Join-Path $WorkingPath.FullName "Data"
+
+    $ConfigtoolCustomerDataPath = (mkdir -Path $ConfigToolDataPath -Name "$CustomerName").FullName
+    Expand-Archive -Path $AADConnectProdConfigZipFilePath -DestinationPath $ConfigtoolCustomerDataPath
+    Rename-Item -Path (Join-Path $ConfigtoolCustomerDataPath  "AzureADConnectSyncConfig") -NewName "Production"
+
+    #Craft the names of the relative paths that will be called by the tool. Setting both to prod to start, and then
+    #override the second argument if staging is provided
+    $ToolArgument1 = Join-Path $CustomerName "Production"
+    $ToolArgument2 = $ToolArgument1
+
+    if (-not [String]::IsNullOrWhiteSpace($AADConnectProdStagingZipFilePath))
+    {
+        Expand-Archive -Path $AADConnectProdStagingZipFilePath -DestinationPath $ConfigtoolCustomerDataPath
+        Rename-Item -Path (Join-Path $ConfigtoolCustomerDataPath  "AzureADConnectSyncConfig") -NewName "Staging"
+        $ToolArgument2 = Join-Path $CustomerName "Staging"
+    }
+
+    Set-Location $WorkingPath
+
+    Invoke-Expression ('.\AzureADConnectSyncDocumenterCmd.exe "{1}" "{0}"' -f $ToolArgument1,$ToolArgument2)
+
+    $report = (Get-ChildItem -Path (Join-Path $WorkingPath "Report") | Select-Object -First 1)
+
+    Write-Output $report.FullName
+}
+
+Function Get-MSCloudIdAssessmentSingleReport
+{
+    [CmdletBinding()]
+    param
+    (
+        [String]$FunctionName,
+        [String]$OutputDirectory,
+        [String]$OutputCSVFileName
+    )
+    $OriginalThreadUICulture = [System.Threading.Thread]::CurrentThread.CurrentUICulture
+    $OriginalThreadCulture = [System.Threading.Thread]::CurrentThread.CurrentCulture
+
+    try {
+        #reports need to be created in en-US for backend processing of datetime
+        $culture = [System.Globalization.CultureInfo]::GetCultureInfo("en-US")
+        [System.Threading.Thread]::CurrentThread.CurrentUICulture = $culture
+        [System.Threading.Thread]::CurrentThread.CurrentCulture = $culture
+
+        $OutputFilePath = Join-Path $OutputDirectory $OutputCSVFileName
+        $Report = Invoke-Expression -Command $FunctionName
+        $Report | Export-Csv -Path $OutputFilePath
+    }
+    finally
+    {
+        [System.Threading.Thread]::CurrentThread.CurrentUICulture = $OriginalThreadUICulture
+        [System.Threading.Thread]::CurrentThread.CurrentCulture = $OriginalThreadCulture
+    } 
+}
+
+<# 
+ .Synopsis
+  Produces the Azure AD Configuration reports required by the Azure AD assesment
+ .Description
+  This cmdlet reads the configuration information from the target Azure AD Tenant and produces the output files 
+  in a target directory
+
+ .PARAMETER OutputDirectory
+    Full path of the directory where the output files will be generated.
+
+.EXAMPLE
+   .\Get-MSCloudIdAssessmentAzureADReports -OutputDirectory "c:\temp\contoso" 
+
+#>
+Function Get-MSCloudIdAssessmentAzureADReports
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [String]$OutputDirectory
+    )
+
+    Start-MSCloudIdSession
+
+    $reportsToRun = @{
+        "Get-MSCloudIdNotificationEmailAddresses" = "NotificationsEmailAddresses.csv"
+        "Get-MSCloudIdAppAssignmentReport" = "AppAssignments.csv"
+        "Get-MSCloudIdAdminRolesReport" = "AdminRoles.csv"
+        "Get-MSCloudIdApplicationKeyExpirationReport" = "AppKeysReport.csv"
+        "Get-MSCloudIdConsentGrantList" = "ConsentGrantList.csv"
+    }
+
+    $totalReports = $reportsToRun.Count
+    $processedReports = 0
+
+    foreach ($reportKvP in $reportsToRun.GetEnumerator())
+    {
+        $functionName = $reportKvP.Name
+        $outputFileName= $reportKvP.Value
+        $percentComplete = 100 * $processedReports / $totalReports
+        Write-Progress -Activity "Reading Azure AD Configuration" -CurrentOperation "Running Report $functionName" -PercentComplete $percentComplete
+        Get-MSCloudIdAssessmentSingleReport -FunctionName $functionName -OutputDirectory $OutputDirectory -OutputCSVFileName $outputFileName
+        $processedReports++
+    }
+
+    
+    # Get-MSCloudIdAssessmentSingleReport -FunctionName "Get-MSCloudIdAppAssignmentReport" -OutputDirectory $OutputDirectory  -OutputCSVFileName "AppAssignments.csv"
+    # Get-MSCloudIdAssessmentSingleReport -FunctionName "Get-MSCloudIdAdminRolesReport" -OutputDirectory $OutputDirectory  -OutputCSVFileName "AdminRoles.csv"
+    # Get-MSCloudIdAssessmentSingleReport -FunctionName "Get-MSCloudIdApplicationKeyExpirationReport" -OutputDirectory $OutputDirectory  -OutputCSVFileName "AppKeysReport.csv" 
+
+    # Get-MSCloudIdAssessmentSingleReport -FunctionName "Get-MSCloudIdConsentGrantList" -OutputDirectory $OutputDirectory  -OutputCSVFileName "ConsentGrantList.csv"
+}
+
 Export-ModuleMember -Function Start-MSCloudIdSession
 Export-ModuleMember -Function Get-MSCloudIdAppProxyConnectorLog
 Export-ModuleMember -Function Get-MSCloudIdPasswordWritebackAgentLog
@@ -503,3 +713,9 @@ Export-ModuleMember -Function Get-MSCloudIdConsentGrantList
 Export-ModuleMember -Function Get-MSCloudIdApplicationKeyExpirationReport
 Export-ModuleMember -Function Get-MSCloudIdADFSEndpoints
 Export-ModuleMember -Function Export-MSCloudIdADFSConfiguration
+Export-ModuleMember -Function Get-MSCloudIdGroupBasedLicensingReport
+Export-ModuleMember -Function Get-MSCloudIdAssessmentAzureADReports
+
+#Get PIM data
+#Get Secure Score
+#Add Master CmdLet and make it in parallel
