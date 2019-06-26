@@ -108,8 +108,18 @@ function Get-MSCloudIdPasswordWritebackAgentLog
 #>
 function Get-MSCloudIdNotificationEmailAddresses
 {
+    
+
     $technicalNotificationEmail = Get-MSOLCompanyInformation | Select-Object -ExpandProperty TechnicalNotificationEmails
-    $result = New-Object -TypeName psobject -Property @{ NotificationEmailScope = "Tenant"; NotificationType = "Technical Notification"; RecipientName = "N/A";  EmailAddress = $technicalNotificationEmail; ; RoleMemberObjectType = "email address"; RoleMemberAlternateEmail = "N/A" }
+    $result = [PSCustomObject]@{
+        RecipientName = "N/A" ;
+        RoleMemberObjectType = "email address"; 
+        RoleMemberAlternateEmail = "N/A";
+        NotificationType  = "Technical Notification"; 
+        NotificationEmailScope = "Tenant";
+        EmailAddress = $technicalNotificationEmail; 
+        RoleMemberUPN = "N/A"
+    } #@{ NotificationEmailScope ; NotificationType; RecipientName ;  EmailAddress = ; ; RoleMemberObjectType ; RoleMemberAlternateEmail; UPN }
 
     Write-Output $result
 
@@ -123,7 +133,18 @@ function Get-MSCloudIdNotificationEmailAddresses
         foreach ($roleMember in $roleMembers)
         {
             $alternateEmail = $roleMember.OtherMails -join ";"
-            $result = New-Object -TypeName psobject -Property @{ NotificationEmailScope = "Role"; NotificationType = $role.DisplayName; RecipientName = $roleMember.DisplayName;  EmailAddress = $roleMember.Mail; UPN = $roleMember.UserPrincipalName; RoleMemberObjectType = $roleMember.ObjectType; RoleMemberAlternateEmail = $alternateEmail }
+
+            $result = [PSCustomObject]@{
+                RecipientName = $roleMember.DisplayName ;
+                RoleMemberObjectType = $roleMember.ObjectType; 
+                RoleMemberAlternateEmail = $alternateEmail;
+                NotificationType  = $role.DisplayName; 
+                NotificationEmailScope =  "Role";
+                EmailAddress = $roleMember.Mail; 
+                RoleMemberUPN = $roleMember.UserPrincipalName
+            } 
+
+            #$result = New-Object -TypeName psobject -Property @{ NotificationEmailScope ; NotificationType = ; RecipientName = ;  EmailAddress = ;  RoleMemberObjectType = ; RoleMemberAlternateEmail = ; UPN = ; }
             Write-Output $result
         }
     }
@@ -715,6 +736,7 @@ Export-ModuleMember -Function Get-MSCloudIdADFSEndpoints
 Export-ModuleMember -Function Export-MSCloudIdADFSConfiguration
 Export-ModuleMember -Function Get-MSCloudIdGroupBasedLicensingReport
 Export-ModuleMember -Function Get-MSCloudIdAssessmentAzureADReports
+Export-ModuleMember -Function Expand-MsCloudIdAADConnectConfig
 
 #Get PIM data
 #Get Secure Score
