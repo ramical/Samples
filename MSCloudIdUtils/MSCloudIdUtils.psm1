@@ -7,7 +7,7 @@
 
 .DESCRIPTION
 
-	Version: 1.0.0
+	Version: 1.0.0.2
 
 	MSCloudIdUtils.psm1 is a Windows PowerShell module with some Azure AD helper functions for common administrative tasks
 
@@ -692,7 +692,7 @@ Function Get-MSCloudIdAppAssignmentReport
     Write-Progress -Id 10 -Activity "Building app assignment report" -CurrentOperation "Getting list of applications" 
 
 
-    $apps = Invoke-MSCloudIdAzureADGraphQuery -AccessToken $AccessToken -TenantDomain $TenantDomain -GraphQuery "servicePrincipals?api-version=1.5"
+    $apps = Invoke-MSCloudIdAzureADGraphQuery -AccessToken $AccessToken -TenantDomain $TenantDomain -GraphQuery "servicePrincipals?api-version=1.6"
 
     $results = @()
     $appCount = $apps.Count
@@ -703,7 +703,7 @@ Function Get-MSCloudIdAppAssignmentReport
         Write-Progress -Id 10 -Activity "Building app assignment report" -PercentComplete (100 * $appIndex / $appCount)  -CurrentOperation "Extracting permissions for each application ($appIndex/$appCount)"  
 
         $appObjectId = $app.objectId
-        $appRoles = Invoke-MSCloudIdAzureADGraphQuery -AccessToken $AccessToken -TenantDomain $TenantDomain -GraphQuery "servicePrincipals/$appObjectId/appRoleAssignedTo?api-version=1.5"
+        $appRoles = Invoke-MSCloudIdAzureADGraphQuery -AccessToken $AccessToken -TenantDomain $TenantDomain -GraphQuery "servicePrincipals/$appObjectId/appRoleAssignedTo?api-version=1.6"
         foreach($appPermission in $appRoles)
         {
             $result = New-Object -TypeName PSObject
