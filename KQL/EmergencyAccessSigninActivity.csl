@@ -1,0 +1,10 @@
+//replace the GUIDs below with the objectIds of the emergency access accounts
+let monitoredAccounts = datatable(objectId:string)
+[
+   "37b7abaf-a503-4611-9594-2edab360af74",
+   "c361e023-93e2-4998-ae46-3956c42bdce6"
+];
+SigninLogs
+| where (
+    UserId in (monitoredAccounts)
+)

@@ -1,0 +1,16 @@
+let PIMSPObjectId = "e37f1832-6370-4145-b145-82197758790f"; //Customize this in your tenant with (Get-AzureADServicePrincipal -Filter "appId eq '01fc33a7-78ba-4d2f-a4b7-768e336e890e'").ObjectId
+AuditLogs
+| where Category == "RoleManagement" 
+| extend PropertiesJSON = parse_json(TargetResources)
+| extend initiatedByJSON = parse_json(InitiatedBy)
+| extend role = PropertiesJSON[0].modifiedProperties[1]['newValue']
+| extend UPN = PropertiesJSON[0].userPrincipalName
+| extend InitiatedByAppDisplayName = initiatedByJSON.app.displayName
+| extend InitiatedByAppSPID = initiatedByJSON.app.servicePrincipalId
+| extend InitiatedByUserDisplayName = initiatedByJSON.user.displayName
+| extend InitiatedByUserUPN = initiatedByJSON.user.userPrincipalName
+| extend InitiatedByUserID = initiatedByJSON.user.id
+| where role == '"Company Administrator"' //you can add more roles here
+| where InitiatedByAppSPID  != PIMSPObjectId
+| project TimeGenerated,CorrelationId,Identity,role, OperationName,UPN,InitiatedByAppDisplayName,InitiatedByAppSPID,InitiatedByUserDisplayName,InitiatedByUserUPN,InitiatedByUserID//,LoggedByService,initiatedByJSON,PropertiesJSON
+| sort by TimeGenerated desc 
