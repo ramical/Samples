@@ -1,0 +1,11 @@
+let cloudOnlyDomains = datatable(domainName:string)
+[
+   "contoso.onmicrosoft.com" //change this with the domains you DON'T expect any on-prem / hybrid activity
+];
+AuditLogs
+| where OperationName == "Update user"
+| extend TargetResourcesJSON = parse_json(TargetResources)
+| extend upnParts = split(TargetResourcesJSON[0].userPrincipalName, "@")
+| where TargetResourcesJSON[0].modifiedProperties contains "SourceAnchor"
+| where upnParts[1] has_any (cloudOnlyDomains)
+| project ActivityDateTime, userPrincipalName = TargetResourcesJSON[0].userPrincipalName, InitiatedBy
