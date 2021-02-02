@@ -1,0 +1,22 @@
+//Scenario 1: Aggregate analysis of trend over time
+SigninLogs
+| extend DeviceId = tostring(DeviceDetail.deviceId)
+| where AppId == "38aa3b87-a06d-4817-b275-7a316988d93b" //Windows Sign-In
+| where ResultType == 0 //
+| summarize DistinctUsers=dcount(UserPrincipalName), DistinctDevices=dcount(DeviceId) by bin(TimeGenerated,1h)//,ResultType,ResultDescription
+
+//Scenario 2: Troubleshooting analysis of failures
+SigninLogs
+| extend DeviceId = tostring(DeviceDetail.deviceId)
+| where AppId == "38aa3b87-a06d-4817-b275-7a316988d93b" //Windows Sign-In
+| where ResultType != 0 // filter out successful attempts
+| where ResultType != 50155 //filter out 'device auth failed'
+| summarize DistinctUsers=dcount(UserPrincipalName), DistinctDevices=dcount(DeviceId) by ResultType,ResultDescription
+
+//Scenario 3: Troubleshooting analysis of 50155
+SigninLogs
+| extend DeviceId = tostring(DeviceDetail.deviceId)
+| where AppId == "38aa3b87-a06d-4817-b275-7a316988d93b" //Windows Sign-In
+| where ResultType == 50155 //Device authentication failed for this user.
+| project TimeGenerated, Id, CorrelationId, UserPrincipalName
+
